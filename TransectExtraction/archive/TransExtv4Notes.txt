@@ -1,0 +1,147 @@
+How to modify and run TransectExtraction_XXX.py
+The most recently modified script is the most updated = the acting master file. Save this as new file and make modifications.
+
+1. Acquire all necessary feature classes - refer to input variables in addition to the list below.
+    (QA/QC/cross-check them: projections, agreement, etc.)
+    Preferred projection is NAD83, Meters - Albers or UTM Zone 19N (or 17 or 18 depending on region of Atlantic coast)
+    - transect lines
+    - boundary polygon
+    - DH points
+    - DL points
+    - shoreline points
+    - MHW line
+    - inlet lines
+
+1.a. Some of the (input) files won't exist yet. Make them. There are some notes in the script that describe the procedure for creating them. Also, see below.
+    - boundary polygon <- shoreline line
+    - inlet lines <- boundary polygon
+    - extended transects with additional lines
+    - confirm MHW line
+
+1.a.1 How to create extended transects
+    Add new transects to fill gaps - if transects are not yet extended, perform this step first, but it shouldn't really matter.
+    - MANUAL: In an Edit session, duplicated a group of 30 extended NA transects and moved the new transects to fill the  gap
+        - Export [LongIsland_LT.shp] to new feature class
+        - measured land not included in transects (~ 1700 m additional beach = ~ 30 additional transects)
+        - Edit -> select and copy, paste, move and rotate the new transects as a group
+            Visually lined the group of transects up with the last transect before the open beach, rotated the group to make transects perpendicular to shoreline, and moved them to have ~50m gap between the last original transect and the new transect.
+    - Select transects that intersect boundary polygon
+    - MANUAL: update TransOrder to give each transect unique and consistent ID
+    - ARCPY: sort(transects, transects_sorted, 'TRANSORDER ASCENDING', UR)
+        Produces new feature class
+        - Reset OID by sorting transects on TransOrder...?
+
+1.a.2 How to create boundary polygon from full shoreline line
+    - MANUAL: if the line does not meet to make a complete polygon shape, Edit the vertices to meet the last vertex with the first.
+    -
+
+1.a.3 How to create SLPs, DHs, DLs from tiled shapefiles
+    - ArcGIS\Documents\Toolbox.tbx\merge_folder
+    - confirm dune presence with polygons from Sara Ziegler
+
+row.setValue('delta_xm_MLW', abs(row.getValue('beach_h_MLW')/sin(row.getValue('Bslope'))))    # modified with 'Bslope' on 12/3/2015
+
+#Adjust DL and DH to MHW datum as opposed to NAVD88
+row.setValue('DL_zMHW', row.getValue('DL_z') - (0.46))
+row.setValue('DH_zMHW', row.getValue('DH_z') - (0.46))
+
+ if row.getValue('DL_z') is not None:
+        lon1 = radians(row.getValue('DL_Lon'))
+        lat1 = radians(row.getValue('DL_Lat'))
+		
+        row.setValue('beach_h_MLW', row.getValue('DL_zMHW') - (MLW))
+    elif (row.getValue('DL_z') is None) and (row.getValue('DH_z') is not None) and (row.getValue('DH_zMHW') < 2.5):
+        lon1 = radians(row.getValue('DH_Lon'))
+        lat1 = radians(row.getValue('DH_Lat'))
+
+        row.setValue('beach_h_MLW', row.getValue('DH_zMHW') - (MLW))
+    else:
+        skip = 1
+
+
+http://blogs.esri.com/esri/supportcenter/2013/04/01/having-issues-adding-arcgis-online-basemaps-to-arcmap/
+
+
+
+# Ben's email:
+*First Goal* => output file in form of "trans_clip2BND.shp" with following fields:
+
+^ = code (BreezyPt_ExtTransects) already provides this complete field
+^OBJECTID
+^Shape
+^BaselineID
+^TransOrder  - transect # from emily's shoreline change data
+^ProcTime
+^StartX      - starting point for each transect where it intersects and offshore baseline that is the reference point for emily's calculations
+^StartY             - " "
+^EndX              - " "
+^EndY             - " "
+^AZIMUTH      - orientation of the transects relative to North
+^LRR          - shoreline change rate calculated by linear regression
+^LR2          - R^2 of correlation between shoreline points
+^LSE          - RMS error I think
+^LCI90        - 90% confidence interval
+
+Shape_Length  - length of transect......
+
+DH_Lon         - position of dune crest height...we do both geographic and UTM coords
+DH_Lat         - position of dune crest height
+DH_easting     - position of dune crest height
+DH_northing    - position of dune crest height
+DH_z           -   height of dune crest relative to NAVD88
+**DH_zMHW      -  *still need to add this field.* height of dune crest relative to MHW- Basically subtract 0.46 from DH_z
+
+DL_Lon        - position of dune crest height...we do both geographic and UTM coords
+DL_Lat        - " "
+DL_easting    - " "
+DL_northing   - " "
+DL_z          - height of dune crest relative to NAVD88
+**DL_zMHW     - *still need to add this field.*  height of dune crest relative to MHW- Basically subtract 0.46 from DL_z
+
+WidthFull     - full length of transect across island end points
+WidthLand     - length transect over land only
+ShL_Lon       - Coordinates of MHW shoreline where it intersects transects
+ShL_Lat       -  Coordinates of MHW shoreline where it intersects transects
+ShL_easting    - ...."" UTM
+ShL_northing    - ...."" UTM
+Bslope          - slope of beach face from lidar data
+beach_h_MLW       - beach height, vertical distance between dune toe and MLW intersect of beach topography
+delta_xm_MLW      - horizontal width of beach
+delta_x_gc_MLW    - width along a great circle (possibly in radians)
+azimuth_SL        - orientation of transect used to sample beach slope in lidar dataset
+MLW_Long          - extrapolated MLW coordinates
+MLW_Lat           - extrapolated MLW coordinates
+beachWdith_MLW    - horizontal width of beach
+
+DistToCana            - distance to the inlet to the west side of Breezy Pt. The reference point should be the first transect on that side that intersects land.  This is a route following distance so it's the cumulative distance along the          shoreline as opposed to a straight-line distance from each transect (funny name comes from Aaron T. who referred to the inlet as a canal).
+
+Dist_DH                  - distance between MHW position and position of dune crest height  (straight-line distance coincident with transect).
+Dist_DL                  - distance between MHW position and position of dune toe
+
+
+
+Goal 2:  sample elevations and slopes along the transects. Output for this is: tranSplitPts.shp which includes all the info in trans_clip2BND.shp  also.
+....code set up to do this at Assateague and we can pull it in here.
+
+seg_x                    - UTM X for each 5-m cell
+seg_y                    - UTM Y for each 5-m cell
+DistSeg                - distance to each 5 m cell from MHW
+DistSegDH            - distance of each 5 m cell from DH position
+DistSegDL            - disntace of each 5 m cell from DL position
+PointZ                   - avg. elevation for each 5-m cell
+PointSlp               - avg. slope for each 5-m cell (not able to do this as we need a slope grid for the site and I don't think sawyer made one yet).
+
+Vegetation: for now, Sara has the vegetation and substrate layers under control and we're going to rely on her for those.
+
+Inputs:  (in the geodatabase I gave you)
+
+BreezyPt_extTransects.shp    - the extended transects for Breezy point. Have shoreline change info associated with them already
+BreezyBoundsPGon.shp    - the Breezy point boundary comprised of ocean side and bayside shorelines
+
+BreezyPoint2014_FullShoreline.shp -
+DHigh_BP_edited.shp  - the Dhigh positions - I have edited out those that do not coincide with a dune layer that sara made
+DLow_BP edited.shp  - ditto for Dlow
+Elev2015_MHW     - elevation grid for Breezy Point
+
+Ocean_MHW_2014.shp
+SLPs    - shoreline positons and slopes derived from: BreezyPoint2014_FullShoreline.shp
