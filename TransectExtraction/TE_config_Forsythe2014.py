@@ -24,25 +24,30 @@ SiteYear_strings = {'site': 'Forsythe',
                     'MHW':0.43,
                     'MLW':-0.61,
                     'MTL':None}
+
+
+CreateMHWline = False
+rawtransects = False
+#rawbarrierline = 'LI_BND_2012Line'
+plover_rst_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\Zeigler_analysis\Layers_for_BN\{year}\BaseLayers'.format(
+    **SiteYear_strings)
+arcpy.env.workspace = plover_rst_dir
+cellsize_rst = arcpy.ListRasters()[0]
+
+########### Automatic population ###########
 arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format(
     **SiteYear_strings)
 SiteYear_strings['home'] = home
 out_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\Extracted_Data'.format(**SiteYear_strings)
+archive_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\All_Years\{site}_transects.gdb'.format(**SiteYear_strings)
 
-deletePtsWithZfill = False          # If True, dune points with elevations of fill (-99999) will be deleted
-CreateMHWline = False
-rawtransects = False
-#rawbarrierline = 'LI_BND_2012Line'
-
-########### Automatic population ###########
-site = SiteYear_strings['site']
 MHW = SiteYear_strings['MHW']
 MLW = SiteYear_strings['MLW']
 dMHW = -MHW                    # Beach height adjustment
 oMLW = MHW-MLW                      # MLW offset from MHW # Beach height adjustment (relative to MHW)
-MTL = MHW-(oMLW/2)
-MTL = (MHW+MLW)/2
-#MTL = SiteYear_strings['MTL']
+SiteYear_strings['MTL'] = MTL = (MHW+MLW)/2
+
+trans_orig = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
 extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 ShorelinePts = '{site}{year}_SLpts'.format(**SiteYear_strings)
 dhPts = '{site}{year}_DHpts'.format(**SiteYear_strings)				# Dune crest
@@ -65,19 +70,20 @@ shl2trans = '{site}{year}_SHL2trans'.format(**SiteYear_strings)							# beach sl
 MLWpts = '{site}{year}_MLW2trans'.format(**SiteYear_strings)                     # MLW points calculated during Beach Width calculation
 CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)                     # Points used as upper beach edge for Beach Width and height
 shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
-slopeGrid = '{site}{year}_slope5m'.format(**SiteYear_strings)
+slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
+
+extTrans_tidy = "{site}{year}_tidytrans".format(**SiteYear_strings)
 transects_part2 = os.path.join(home,'trans_part2')
 transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
-extTrans_tidy = "{site}{year}_tidytrans".format(**SiteYear_strings)
-baseName = "{site}{year}_trans_clip".format(**SiteYear_strings)
+trans_clipped = 'trans_clipped2island'
 tranSplitPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
 tranSplitPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
 tranSplitPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
 tranSplitPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
+tranSplitPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
-
-tempfile = 'trans_temp'
-armz = 'Arm_z'
+extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
+beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"
@@ -87,7 +93,6 @@ if SiteYear_strings['site'] == 'Monomoy':
     maxDH = 3
 else:
     maxDH = 2.5
-
 nad83 = arcpy.SpatialReference(4269)
 extendlength = 3000                      # extended transects distance (m) IF NEEDED
 if SiteYear_strings['region'] == 'Massachusetts' or SiteYear_strings['region'] == 'RhodeIsland' or SiteYear_strings['region'] == 'Maine':

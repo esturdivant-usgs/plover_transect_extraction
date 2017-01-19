@@ -122,14 +122,14 @@ def newcoord(coords, dist):
 def ReplaceFields(fc,newoldfields,fieldtype='DOUBLE'):
     # Use tokens to save geometry properties as attributes
     # E.g. newoldfields={'LENGTH':'SHAPE@LENGTH'}
+    spatial_ref = arcpy.Describe(fc).spatialReference
     for (new, old) in newoldfields.items():
         if not fieldExists(fc,new):
             #arcpy.DeleteField_management(fc,new)
             arcpy.AddField_management(fc,new,fieldtype)
-        with arcpy.da.UpdateCursor(fc,[new, old]) as cursor:
+        with arcpy.da.UpdateCursor(fc,[new, old], spatial_reference=spatial_ref) as cursor:
             for row in cursor:
-                row[0] = row[1]
-                cursor.updateRow(row)
+                cursor.updateRow([row[1], row[1])
         if fieldExists(fc,old):
             try:
                 arcpy.DeleteField_management(fc,old)
@@ -167,7 +167,23 @@ def AddXYAttributes(fc,newfc,prefix,proj_code=26918):
             cursor.updateRow(row)
     return newfc
 
+#FIXME
 def ReplaceValueInFC(fc,fields=[],oldvalue=-99999,newvalue=None):
+    # Replace oldvalue with newvalue in fields in fc
+    with arcpy.da.UpdateCursor(fc, "*") as cursor:
+        for i in range(len(cursor.fields)):
+            # get fieldtype
+            # convert newvalue to appropriate field type before
+            for row in cursor:
+                if row[i] == oldvalue:
+                    row[i] = newvalue
+                    try:
+                        cursor.updateRow(row)
+                    except RuntimeError:
+                        pass
+    return fc
+
+def ReplaceValueInFC_v1(fc,fields=[],oldvalue=-99999,newvalue=None):
     # Replace oldvalue with newvalue in fields in fc
     if len(fields) < 1:
         fs = arcpy.ListFields(fc)
@@ -903,7 +919,21 @@ def GetBarrierWidths(in_trans, out_fc, barrierBoundary, transUIDfield, shoreline
     ReplaceFields("singlepart_temp",{'WidthPart':'SHAPE@LENGTH'})
     arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
     arcpy.JoinField_management(out_fc,transUIDfield,"singlepart_temp",transUIDfield,"WidthPart")
+    # Add fields to original file
+    joinfields = ["WidthFull","WidthLand","WidthPart"]
+    arcpy.DeleteField_management(in_trans, joinfields) # in case of reprocessing
+    arcpy.JoinField_management(in_trans,transUIDfield,out_fc,transUIDfield,joinfields)
     return out_fc
+
+def TransectsToContinuousRaster(in_trans, out_rst, cellsize_rst, transUIDfield='sort_ID'):
+    # Create raster of sort_ID - each cell value indicates its nearest transect
+    trans_rst = 'rst_transID_temp'
+    arcpy.PolylineToRaster_conversion(in_trans, transUIDfield, trans_rst, cellsize=5)
+    #outEucAll = arcpy.sa.EucAllocation(in_trans, maximum_distance=50, in_value_raster=trans_rst, cell_size=cellsize_rst)
+    outEucAll = arcpy.sa.EucAllocation(in_trans, maximum_distance=50, cell_size=cellsize_rst, source_field=transUIDfield)
+    #arcpy.AddJoin_management(outEucAll, 'Value', in_trans, 'sort_ID')
+    outEucAll.save(out_rst)
+    return out_rst
 
 def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtrans='trans_clipped2island'):
     """

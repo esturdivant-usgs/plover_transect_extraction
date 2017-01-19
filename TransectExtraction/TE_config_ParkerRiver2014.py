@@ -33,11 +33,10 @@ rawtransects = False
 plover_rst_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\Zeigler_analysis\Layers_for_BN\{year}\BaseLayers'.format(
     **SiteYear_strings)
 arcpy.env.workspace = plover_rst_dir
-cellsize_rst = arcpy.ListRasters()[0]
+cellsize_rst = os.path.join(plover_rst_dir, arcpy.ListRasters()[0])
 
 ########### Automatic population ###########
-arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format(
-    **SiteYear_strings)
+arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format( **SiteYear_strings)
 SiteYear_strings['home'] = home
 out_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\Extracted_Data'.format(**SiteYear_strings)
 archive_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\All_Years\{site}_transects.gdb'.format(**SiteYear_strings)
@@ -84,7 +83,10 @@ tranSplitPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 tranSplitPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
 extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
-beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings))
+beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
+
+rst_transID = "{site}{year}_rstTransID".format(**SiteYear_strings)
+rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"
@@ -98,7 +100,7 @@ nad83 = arcpy.SpatialReference(4269)
 extendlength = 3000                      # extended transects distance (m) IF NEEDED
 if SiteYear_strings['region'] == 'Massachusetts' or SiteYear_strings['region'] == 'RhodeIsland' or SiteYear_strings['region'] == 'Maine':
     proj_code = 26919 # "NAD 1983 UTM Zone 19N"
-    utmSR = arcpy.SpatialReference(proj_code)
+    utmSR = arcpy.SpatialReference(26919)
 else:
     proj_code = 26918 # "NAD 1983 UTM Zone 18N"
     utmSR = arcpy.SpatialReference(proj_code)

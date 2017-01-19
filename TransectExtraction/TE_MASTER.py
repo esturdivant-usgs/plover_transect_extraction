@@ -14,6 +14,7 @@ Notes:
 import arcpy, time, os, pythonaddins, sys, math
 sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
+#from TE_config_Forsythe2014 import *
 from TE_config_ParkerRiver2014 import *
 
 start = time.clock()
@@ -163,15 +164,37 @@ if not fieldExists(extendedTransects, 'SL_easting'):
     AddFeaturePositionsToTransects(extendedTransects, extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts},  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
 CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, create_points=True)
 
-#FIXME: Populate extTrans_tidy with ALL the new fields
+# Populate extTrans_tidy with ALL the new fields
+newfields = ['DL_z','DH_z','Arm_z',
+            'DL_zMHW', 'DH_zMHW','Arm_zMHW',
+            "DistDH", "DistDL", "DistArm",
+            "SL_easting", "SL_northing",
+            "DH_easting", "DH_northing",
+            "DL_easting", "DL_northing",
+            "Arm_easting", "Arm_northing",
+            'MLW_easting','MLW_northing',
+          'beach_h_MHW','beachWidth_MHW',
+          'beach_h_MLW','beachWidth_MLW',
+          'CP_easting','CP_northing','CP_zMHW'] # Ben's label for easting and northing of dune point (DL,DH,or DArm) to be used for beachWidth and beach_h_MHW
+arcpy.DeleteField_management(extTrans_tidy, newfields) # in case of reprocessing
+arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,newfields)
 
+
+#####
+# Beach width raster
+#####
+
+
+
+"""
+# v1
 joinfields = ['beachWidth_MHW']
 arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
 arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
 trans_buff = 'transbuffer_temp'
 arcpy.Buffer_analysis(extTrans_tidy, trans_buff, "25 METERS", line_end_type="FLAT", dissolve_option="LIST", dissolve_field=[transUIDfield, 'beachWidth_MHW'])
 arcpy.PolygonToRaster_conversion(trans_buff, 'beachWidth_MHW', beachwidth_rst, cell_assignment='CELL_CENTER', cellsize=5) # cell_center produces gaps only when there is a gap in the features. Max combined area created more gaps.
-
+"""
 print("{} have been populated with beach width and used to create {}.".format(extTrans_tidy, beachwidth_rst))
 
 endPart2 = time.clock()
@@ -214,11 +237,45 @@ startPart4 = time.clock()
 GetBarrierWidths(extendedTransects, trans_clipped, barrierBoundary)
 
 joinfields = ["WidthFull","WidthLand","WidthPart"]
-# Save final transects before moving on to segmenting them
+
 arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
 arcpy.JoinField_management(extTrans_tidy,transUIDfield,trans_clipped,transUIDfield,joinfields)
+print("Final population of {} completed. Now creating a raster version as {}. ".format(extTrans_tidy))
 
-print("Final population of " + extTrans_tidy + " completed. ")
+
+
+#FIXME
+extTrans_tidy_fill = extTrans_tidy+'_fill'
+arcpy.FeatureClassToFeatureClass_conversion(extTrans_tidy, home, extTrans_tidy_fill)
+ReplaceValueInFC(extTrans_tidy_fill,[], None, fill)
+
+JoinFCtoRaster(rst_transPopulated, extTrans_tidy, rst_transID, transUIDfield='sort_ID')
+
+def JoinFCtoRaster(out_rst, in_fc, in_rst, use_fill_values=True, transUIDfield='sort_ID'):
+    if not arcpy.Exists(in_rst):
+        in_rst = TransectsToContinuousRaster(extTrans_tidy, in_rst, cellsize_rst, transUIDfield)
+    arcpy.MakeTableView_management(in_fc, 'tableview')
+    # if use_fill_values:
+    #     ReplaceValueInFC('tableview',[], None, fill)
+    arcpy.MakeRasterLayer_management(in_rst, 'rst_lyr')
+    arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', transUIDfield)
+    arcpy.CopyRaster_management('rst_lyr', out_rst)
+    return out_rst
+"""
+# Get raster of transect IDs
+if not arcpy.Exists(rst_transID):
+    rst_transID = TransectsToContinuousRaster(extTrans_tidy, rst_transID, cellsize_rst, transUIDfield)
+arcpy.MakeTableView_management(extTrans_tidy, 'trans_tableview')
+arcpy.MakeRasterLayer_management(rst_transID, 'rst_trans_lyr')
+arcpy.AddJoin_management('rst_trans_lyr', 'Value', 'trans_tableview', transUIDfield)
+arcpy.env.outputCoordinateSystem = utmSR
+arcpy.env.scratchWorkspace = home
+arcpy.CopyRaster_management('rst_trans_lyr', rst_transPopulated)
+"""
+
+
+
+# Save final transects before moving on to segmenting them
 arcpy.FeatureClassToFeatureClass_conversion(extTrans_tidy,home,transects_final)
 print("Creation of " + transects_final + " completed. ")
 
@@ -230,6 +287,8 @@ duration = endPart4 - startPart4
 hours, remainder = divmod(duration, 3600)
 minutes, seconds = divmod(remainder, 60)
 print "Part 2 completed in %dh:%dm:%fs" % (hours, minutes, seconds)
+
+
 
 
 '''______________________PART 5_________________________________________________
@@ -251,12 +310,13 @@ if not fieldExists(extTrans_tidy,'DistDH'):
     arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
     arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
 if not fieldExists(extTrans_tidy, 'WidthPart'):
-    if not fieldExists(extendedTransects, "WidthPart"):
+    if not fieldExists(extTrans_tidy, "WidthPart"):
         GetBarrierWidths(extendedTransects, trans_clipped, barrierBoundary)
     joinfields = ["WidthFull","WidthLand","WidthPart"]
     # Save final transects before moving on to segmenting them
     arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
-    arcpy.JoinField_management(extTrans_tidy,transUIDfield,trans_clipped,transUIDfield,joinfields)
+    arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
+
 # Split transects into points
 transPts_presort = SplitTransectsToPoints(extTrans_tidy, 'transPts_presort', barrierBoundary, home, clippedtrans='trans_clipped2island')
 
@@ -268,7 +328,7 @@ ReplaceFields(transPts_presort,{'seg_x':'SHAPE@X','seg_y':'SHAPE@Y'}) # Add xy f
 
 # extTrans_tidy must have SL_easting, SL_northing, and WidthPart
 distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y', 'SL_easting', 'SL_northing', 'WidthPart', 'DistSegDH', 'DistSegDL','Dist_Seg','DistDH', 'DistDL', 'DistArm', 'DistSegArm']
-AddNewFields(tranSplitPts, distfields)
+AddNewFields(transPts_presort, distfields)
 with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
     for row in cursor:
         flist = cursor.fields
@@ -279,18 +339,18 @@ with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
             SL_northing = row[flist.index('SL_northing')]
             row[flist.index('Dist_Seg')] = dist2mhw = math.sqrt((seg_x - SL_easting)**2 + (seg_y - SL_northing)**2) # hypot(row[4]-row[2],row[5]-row[3])
             row[flist.index('Dist_MHWbay')] = row[flist.index('WidthPart')] - dist2mhw
-        except:
-            pass
-        try:
-            row[flist.index('DistSegDH')] = dist2mhw-row[flist.index('DistDH')]
-        except TypeError:
-            pass
-        try:
-            row[flist.index('DistSegDL')] = dist2mhw-row[flist.index('DistDL')]
-        except TypeError:
-            pass
-        try:
-            row[flist.index('DistSegArm')] = dist2mhw-row[flist.index('DistArm')]
+            try:
+                row[flist.index('DistSegDH')] = dist2mhw-row[flist.index('DistDH')]
+            except TypeError:
+                pass
+            try:
+                row[flist.index('DistSegDL')] = dist2mhw-row[flist.index('DistDL')]
+            except TypeError:
+                pass
+            try:
+                row[flist.index('DistSegArm')] = dist2mhw-row[flist.index('DistArm')]
+            except TypeError:
+                pass
         except TypeError:
             pass
         cursor.updateRow(row)
