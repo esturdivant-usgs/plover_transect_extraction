@@ -779,7 +779,7 @@ def CalcBeachWidthGeometry(MLW,dune_lon,dune_lat,beach_z,beach_slope,SL_Lon,SL_L
         output = [None, None, None, None, None, None]
     return output
 """
-def CalculateBeachDistances(in_trans, out_fc, maxDH, home, create_points=True):
+def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, create_points=True):
     if not in_trans == out_fc:
         arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
     # Set fields that will be used to calculate beach width and store the results

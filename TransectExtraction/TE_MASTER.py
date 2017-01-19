@@ -161,7 +161,7 @@ startPart2 = time.clock()
 
 if not fieldExists(extendedTransects, 'SL_easting'):
     AddFeaturePositionsToTransects(extendedTransects, extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts},  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
-CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, create_points=True)
+CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, create_points=True)
 
 #FIXME: Populate extTrans_tidy with ALL the new fields
 
@@ -241,7 +241,22 @@ print 'Starting Part 5'
 print 'Expect a 3 to 15 minute wait'
 startPart5 = time.clock()
 
-
+#FIXME: may not be necessary to join before converting to points...
+if not fieldExists(extTrans_tidy,'DistDH'):
+    if not fieldExists(extendedTransects, 'SL_easting'):
+        AddFeaturePositionsToTransects(extendedTransects, extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts},  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
+    if not fieldExists(extendedTransects, 'beachWidth_MHW'):
+        CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, create_points=True)
+    joinfields = ['SL_easting', 'SL_northing','DistDH', 'DistDL', 'DistArm']
+    arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
+    arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
+if not fieldExists(extTrans_tidy, 'WidthPart'):
+    if not fieldExists(extendedTransects, "WidthPart"):
+        GetBarrierWidths(extendedTransects, trans_clipped, barrierBoundary)
+    joinfields = ["WidthFull","WidthLand","WidthPart"]
+    # Save final transects before moving on to segmenting them
+    arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
+    arcpy.JoinField_management(extTrans_tidy,transUIDfield,trans_clipped,transUIDfield,joinfields)
 # Split transects into points
 transPts_presort = SplitTransectsToPoints(extTrans_tidy, 'transPts_presort', barrierBoundary, home, clippedtrans='trans_clipped2island')
 
@@ -251,6 +266,7 @@ transPts_presort = SplitTransectsToPoints(extTrans_tidy, 'transPts_presort', bar
 
 ReplaceFields(transPts_presort,{'seg_x':'SHAPE@X','seg_y':'SHAPE@Y'}) # Add xy for each segment center point
 
+# extTrans_tidy must have SL_easting, SL_northing, and WidthPart
 distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y', 'SL_easting', 'SL_northing', 'WidthPart', 'DistSegDH', 'DistSegDL','Dist_Seg','DistDH', 'DistDL', 'DistArm', 'DistSegArm']
 AddNewFields(tranSplitPts, distfields)
 with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
