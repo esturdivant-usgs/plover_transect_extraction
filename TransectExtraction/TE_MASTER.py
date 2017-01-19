@@ -356,7 +356,8 @@ with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
         cursor.updateRow(row)
 
 # Sort on transUIDfield and DistSeg (id_temp)
-RemoveLayerFromMXD(transPts_presort)
+if open_mxd: #FIXME
+    RemoveLayerFromMXD(transPts_presort)
 arcpy.Sort_management(transPts_presort, tranSplitPts, [[transUIDfield,'ASCENDING'],['Dist_Seg','ASCENDING']])
 ReplaceFields(tranSplitPts,{'SplitSort':'OID@'})
 
