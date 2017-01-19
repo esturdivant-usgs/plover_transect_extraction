@@ -539,9 +539,11 @@ def ShorelinePtsToTransects(extendedTransects, shoreline, inPtsDict, transUIDfie
     arcpy.JoinField_management(extendedTransects,transUIDfield,shl2trans,transUIDfield,shlfields)
     return extendedTransects
 
-def AddFeaturePositionsToTransects(extendedTransects, inPtsDict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance):
+def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home):
+    if not in_trans == out_fc:
+        arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
     # Shoreline
-    ShorelinePtsToTransects(extendedTransects, shoreline, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance)
+    ShorelinePtsToTransects(out_fc, shoreline, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance)
     # Armor
     tempfile = 'trans_temp'
     arm2trans = "arm2trans"
@@ -550,7 +552,7 @@ def AddFeaturePositionsToTransects(extendedTransects, inPtsDict,  shoreline, arm
     if not arcpy.Exists(arm2trans):
         # Create armor points with XY and LatLon fields
         DeleteExtraFields(armorLines)
-        arcpy.Intersect_analysis((armorLines,extendedTransects), tempfile, output_type='POINT')
+        arcpy.Intersect_analysis((armorLines,out_fc), tempfile, output_type='POINT')
         AddXYAttributes(tempfile,arm2trans,'Arm',proj_code)
         # Get elevation at points
         if arcpy.Exists(elevGrid_5m):
@@ -559,19 +561,19 @@ def AddFeaturePositionsToTransects(extendedTransects, inPtsDict,  shoreline, arm
         else:
             arcpy.AddField_management(arm2trans,armz)
     # Join
-    arcpy.DeleteField_management(extendedTransects, armorfields) #In case of reprocessing
-    arcpy.JoinField_management(extendedTransects, transUIDfield, arm2trans, transUIDfield, armorfields)
+    arcpy.DeleteField_management(out_fc, armorfields) #In case of reprocessing
+    arcpy.JoinField_management(out_fc, transUIDfield, arm2trans, transUIDfield, armorfields)
     # How do I know which point will be encountered first? - don't want those in back to take the place of
 
     # Dunes
     dh2trans = "dh2trans"
     dhfields = {'DH_Lon':'lon', 'DH_Lat':'lat', 'DH_easting':'east', 'DH_northing':'north', 'DH_z':'dhigh_z'}
-    BeachPointMetricsToTransects(extendedTransects, inPtsDict['dhPts'], dh2trans, dhfields, joinfields=[transUIDfield,transUIDfield], firsttime=True, tempfile=tempfile, tolerance=pt2trans_disttolerance)
+    BeachPointMetricsToTransects(out_fc, inPtsDict['dhPts'], dh2trans, dhfields, joinfields=[transUIDfield,transUIDfield], firsttime=True, tempfile=tempfile, tolerance=pt2trans_disttolerance)
     dl2trans = "dl2trans"
     dlfields = {'DL_Lon':'lon', 'DL_Lat':'lat', 'DL_easting':'east', 'DL_northing':'north', 'DL_z':'dlow_z'}
-    BeachPointMetricsToTransects(extendedTransects, inPtsDict['dlPts'], dl2trans, dlfields, joinfields=[transUIDfield,transUIDfield], firsttime=True, tempfile=tempfile, tolerance=pt2trans_disttolerance)
+    BeachPointMetricsToTransects(out_fc, inPtsDict['dlPts'], dl2trans, dlfields, joinfields=[transUIDfield,transUIDfield], firsttime=True, tempfile=tempfile, tolerance=pt2trans_disttolerance)
 
-    return extendedTransects
+    return out_fc
 
 def BeachPointMetricsToTransects(transects, oldPts, newPts, fieldnamesdict,joinfields=['sort_ID'],firsttime=True, tempfile='trans_temp', tolerance='25 METERS'):
     # Save only points within 10m of transect and join beach point metrics to transects
@@ -594,100 +596,6 @@ def BeachPointMetricsToTransects(transects, oldPts, newPts, fieldnamesdict,joinf
         pass
     JoinFields(transects,tempfile,fieldnamesdict,joinfields=joinfields)
     return transects
-
-def CalculateBeachDistances(extendedTransects, maxDH, create_points=True):
-    # Set fields that will be used to calculate beach width and store the results
-    fieldlist = ['DL_z','DH_z','Arm_z',
-                'DL_zMHW', 'DH_zMHW','Arm_zMHW',
-                "DistDH", "DistDL", "DistArm",
-                "SL_easting", "SL_northing",
-                "DH_easting", "DH_northing",
-                "DL_easting", "DL_northing",
-                "Arm_easting", "Arm_northing"]
-    beachWidth_fields = ['MLW_easting',
-              'MLW_northing',
-              'beach_h_MHW',
-              'beachWidth_MHW',
-              'beach_h_MLW',
-              'beachWidth_MLW',
-              'CP_easting','CP_northing', # Ben's label for easting and northing of dune point (DL,DH,or DArm) to be used for beachWidth and beach_h_MHW
-              'CP_zMHW']
-    distfields = ['DistDH','DistDL','DistArm'] # distance from shoreline
-    # Add fields if they don't already exist
-    AddNewFields(extendedTransects,fieldlist)
-    #AddNewFields(baseName,'Source_beachwidth','TEXT')
-    AddNewFields(extendedTransects, beachWidth_fields)
-    # Calculate
-    errorct = transectct = 0
-    with arcpy.da.UpdateCursor(extendedTransects,'*') as cursor:
-        for row in cursor:
-            flist = cursor.fields
-            transectct +=1
-            try:
-                row[flist.index('DL_zMHW')] = row[flist.index('DL_z')] + dMHW
-            except TypeError:
-                pass
-            try:
-                row[flist.index('DH_zMHW')] = row[flist.index('DH_z')] + dMHW
-            except TypeError:
-                pass
-            try:
-                row[flist.index('Arm_zMHW')] = row[flist.index('Arm_z')] + dMHW
-            except TypeError:
-                pass
-            # Calc DistDH and DistDL: distance from DH and DL to MHW (ShL_northing,ShL_easting)
-            sl_x = row[flist.index('SL_easting')]
-            sl_y = row[flist.index('SL_northing')]
-            try:
-                row[flist.index('DistDH')] = hypot(sl_x - row[flist.index('DH_easting')], sl_y - row[flist.index('DH_northing')])
-            except TypeError:
-                pass
-            try:
-                row[flist.index('DistDL')] = hypot(sl_x - row[flist.index('DL_easting')], sl_y - row[flist.index('DL_northing')])
-            except TypeError:
-                pass
-            try:
-                row[flist.index('DistArm')] = hypot(sl_x - row[flist.index('Arm_easting')], sl_y - row[flist.index('Arm_northing')])
-            except TypeError:
-                pass
-            # Find which of DL, DH, and Arm is closest to MHW and not Null (exclude DH if higher than maxDH)
-            cp = FindNearestPointWithZvalue(row,flist,distfields,maxDH) # prefix of closest point metric
-            if cp: # if closest point was found calculate beach width with that point, otherwise skip
-                # Calculate beach width = Euclidean distance from dune (DL, DH, or Arm) to MHW and MLW
-                # Set values from each row
-                d_x = row[flist.index(cp+'_easting')]
-                d_y = row[flist.index(cp+'_northing')]
-                b_slope = row[flist.index('Bslope')]
-                sl_x = row[flist.index('SL_easting')]
-                sl_y = row[flist.index('SL_northing')]
-                #beachWidth_MHW = CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y)
-                mlw_x, mlw_y, beachWidth_MLW = CalcBeachWidth_MLW(oMLW,d_x,d_y,b_slope,sl_x,sl_y)
-                beach_h_MHW = row[flist.index(cp+'_zMHW')]
-                # update Row values
-                row[flist.index('MLW_easting')] = mlw_x
-                row[flist.index('MLW_northing')] = mlw_y
-                row[flist.index('beach_h_MHW')] = beach_h_MHW
-                row[flist.index('beachWidth_MHW')] = row[flist.index('Dist'+cp)]
-                row[flist.index('beach_h_MLW')] = beach_h_MHW-oMLW
-                row[flist.index('beachWidth_MLW')] = beachWidth_MLW
-                #row[flist.index('Source_beachwidth')] = cp
-                row[flist.index('CP_easting')] = row[flist.index(cp+'_easting')]
-                row[flist.index('CP_northing')] = row[flist.index(cp+'_northing')]
-                row[flist.index('CP_zMHW')] = row[flist.index(cp+'_zMHW')]
-            else:
-                errorct +=1
-                pass
-            cursor.updateRow(row)
-    # Report
-    print("Beach Width could not be calculated for {} out of {} transects.".format(errorct,transectct))
-    # Create MLW and CP points for error checking
-    if create_points:
-        arcpy.MakeXYEventLayer_management(extendedTransects,'MLW_easting','MLW_northing',MLWpts+'_lyr',utmSR)
-        arcpy.CopyFeatures_management(MLWpts+'_lyr',MLWpts)
-        arcpy.MakeXYEventLayer_management(extendedTransects,'CP_easting','CP_northing',CPpts+'_lyr',utmSR)
-        arcpy.CopyFeatures_management(CPpts+'_lyr',CPpts)
-    # Return
-    return extendedTransects
 
 def dist2inlet(in_line, transUIDfield, xpts, coord_priority = "LOWER_LEFT"):
     # Assign variables
@@ -871,3 +779,145 @@ def CalcBeachWidthGeometry(MLW,dune_lon,dune_lat,beach_z,beach_slope,SL_Lon,SL_L
         output = [None, None, None, None, None, None]
     return output
 """
+def CalculateBeachDistances(in_trans, out_fc, maxDH, home, create_points=True):
+    if not in_trans == out_fc:
+        arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
+    # Set fields that will be used to calculate beach width and store the results
+    fieldlist = ['DL_z','DH_z','Arm_z',
+                'DL_zMHW', 'DH_zMHW','Arm_zMHW',
+                "DistDH", "DistDL", "DistArm",
+                "SL_easting", "SL_northing",
+                "DH_easting", "DH_northing",
+                "DL_easting", "DL_northing",
+                "Arm_easting", "Arm_northing"]
+    beachWidth_fields = ['MLW_easting',
+              'MLW_northing',
+              'beach_h_MHW',
+              'beachWidth_MHW',
+              'beach_h_MLW',
+              'beachWidth_MLW',
+              'CP_easting','CP_northing', # Ben's label for easting and northing of dune point (DL,DH,or DArm) to be used for beachWidth and beach_h_MHW
+              'CP_zMHW']
+    distfields = ['DistDH','DistDL','DistArm'] # distance from shoreline
+    # Add fields if they don't already exist
+    AddNewFields(out_fc,fieldlist)
+    #AddNewFields(baseName,'Source_beachwidth','TEXT')
+    AddNewFields(out_fc, beachWidth_fields)
+    # Calculate
+    errorct = transectct = 0
+    with arcpy.da.UpdateCursor(out_fc,'*') as cursor:
+        for row in cursor:
+            flist = cursor.fields
+            transectct +=1
+            try:
+                row[flist.index('DL_zMHW')] = row[flist.index('DL_z')] + dMHW
+            except TypeError:
+                pass
+            try:
+                row[flist.index('DH_zMHW')] = row[flist.index('DH_z')] + dMHW
+            except TypeError:
+                pass
+            try:
+                row[flist.index('Arm_zMHW')] = row[flist.index('Arm_z')] + dMHW
+            except TypeError:
+                pass
+            # Calc DistDH and DistDL: distance from DH and DL to MHW (ShL_northing,ShL_easting)
+            sl_x = row[flist.index('SL_easting')]
+            sl_y = row[flist.index('SL_northing')]
+            try:
+                row[flist.index('DistDH')] = hypot(sl_x - row[flist.index('DH_easting')], sl_y - row[flist.index('DH_northing')])
+            except TypeError:
+                pass
+            try:
+                row[flist.index('DistDL')] = hypot(sl_x - row[flist.index('DL_easting')], sl_y - row[flist.index('DL_northing')])
+            except TypeError:
+                pass
+            try:
+                row[flist.index('DistArm')] = hypot(sl_x - row[flist.index('Arm_easting')], sl_y - row[flist.index('Arm_northing')])
+            except TypeError:
+                pass
+            # Find which of DL, DH, and Arm is closest to MHW and not Null (exclude DH if higher than maxDH)
+            cp = FindNearestPointWithZvalue(row,flist,distfields,maxDH) # prefix of closest point metric
+            if cp: # if closest point was found calculate beach width with that point, otherwise skip
+                # Calculate beach width = Euclidean distance from dune (DL, DH, or Arm) to MHW and MLW
+                # Set values from each row
+                d_x = row[flist.index(cp+'_easting')]
+                d_y = row[flist.index(cp+'_northing')]
+                b_slope = row[flist.index('Bslope')]
+                sl_x = row[flist.index('SL_easting')]
+                sl_y = row[flist.index('SL_northing')]
+                #beachWidth_MHW = CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y)
+                mlw_x, mlw_y, beachWidth_MLW = CalcBeachWidth_MLW(oMLW,d_x,d_y,b_slope,sl_x,sl_y)
+                beach_h_MHW = row[flist.index(cp+'_zMHW')]
+                # update Row values
+                row[flist.index('MLW_easting')] = mlw_x
+                row[flist.index('MLW_northing')] = mlw_y
+                row[flist.index('beach_h_MHW')] = beach_h_MHW
+                row[flist.index('beachWidth_MHW')] = row[flist.index('Dist'+cp)]
+                row[flist.index('beach_h_MLW')] = beach_h_MHW-oMLW
+                row[flist.index('beachWidth_MLW')] = beachWidth_MLW
+                #row[flist.index('Source_beachwidth')] = cp
+                row[flist.index('CP_easting')] = row[flist.index(cp+'_easting')]
+                row[flist.index('CP_northing')] = row[flist.index(cp+'_northing')]
+                row[flist.index('CP_zMHW')] = row[flist.index(cp+'_zMHW')]
+            else:
+                errorct +=1
+                pass
+            cursor.updateRow(row)
+    # Report
+    print("Beach Width could not be calculated for {} out of {} transects.".format(errorct,transectct))
+    # Create MLW and CP points for error checking
+    if create_points:
+        arcpy.MakeXYEventLayer_management(out_fc,'MLW_easting','MLW_northing',MLWpts+'_lyr',utmSR)
+        arcpy.CopyFeatures_management(MLWpts+'_lyr',MLWpts)
+        arcpy.MakeXYEventLayer_management(out_fc,'CP_easting','CP_northing',CPpts+'_lyr',utmSR)
+        arcpy.CopyFeatures_management(CPpts+'_lyr',CPpts)
+    # Return
+    return out_fc
+
+def GetBarrierWidths(in_trans, out_fc, barrierBoundary, transUIDfield, shoreline):
+    """
+    Island width - total land (WidthLand), farthest sides (WidthFull), and segment (WidthPart)
+    """
+    # ALTERNATIVE: add start_x, start_y, end_x, end_y to baseName and then calculate Euclidean distance from array
+    #arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xptsbarrier_temp',output_type='POINT') # ~40 seconds
+    #arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xlinebarrier_temp',output_type='LINE') # ~30 seconds
+    #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH")
+    # find farthest point to sl_x, sl_y => WidthFull and closest point => WidthPart
+    # Clip transects with boundary polygon
+    arcpy.Clip_analysis(in_trans, barrierBoundary, out_fc) # ~30 seconds
+    # WidthLand
+    ReplaceFields(out_fc,{'WidthLand':'SHAPE@LENGTH'})
+    # WidthFull
+    #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
+    # Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
+    arcpy.FeatureVerticesToPoints_management(out_fc, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
+    arcpy.PointsToLine_management("verts_temp","trans_temp",transUIDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
+    arcpy.SimplifyLine_cartography("trans_temp", "length_temp","POINT_REMOVE",".01","FLAG_ERRORS","NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
+    ReplaceFields("length_temp",{'WidthFull':'SHAPE@LENGTH'})
+    # Join clipped transects with full barrier lines and transfer width value
+    arcpy.JoinField_management(out_fc, transUIDfield, "length_temp", transUIDfield, "WidthFull")
+
+    # Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
+    arcpy.MultipartToSinglepart_management(out_fc,'singlepart_temp')
+    ReplaceFields("singlepart_temp",{'WidthPart':'SHAPE@LENGTH'})
+    arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
+    arcpy.JoinField_management(out_fc,transUIDfield,"singlepart_temp",transUIDfield,"WidthPart")
+    return out_fc
+
+def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtrans='trans_clipped2island'):
+    """
+    # Split transects into segments
+    """
+    if not arcpy.Exists(clippedtrans):
+        arcpy.Clip_analysis(in_trans, barrierBoundary, clippedtrans)
+    # Convert transects to 5m points: multi to single; split lines; segments to center points
+    #arcpy.MultipartToSinglepart_management(baseName, tranSplitPts+'Sing_temp')
+    input1 = os.path.join(home,'singlepart_temp')
+    output = os.path.join(home, 'singlepart_split_temp')
+    arcpy.MultipartToSinglepart_management(clippedtrans, input1)
+    arcpy.AddToolbox("C:/ArcGIS/XToolsPro/Toolbox/XTools Pro.tbx")
+    arcpy.XToolsGP_SplitPolylines_xtp(input1,output,"INTO_SPECIFIED_SEGMENTS","5 Meters","10","#","#","ORIG_OID")
+    arcpy.env.workspace = home #reset workspace - XTools changes default workspace for some reason
+    arcpy.FeatureToPoint_management(output, out_pts)
+    return out_pts

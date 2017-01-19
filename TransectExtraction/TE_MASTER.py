@@ -1,9 +1,8 @@
 '''
-Deep dive Transect Extraction for Fire Island, NY 2012
+Deep dive Transect Extraction
 Requires: python 2.7, Arcpy
 Author: Sawyer Stippa, modified by Ben Gutierrez & Emily Sturdivant
 email: esturdivant@usgs.gov; bgutierrez@usgs.gov; sawyer.stippa@gmail.com
-Date last modified: 5/4/2016
 
 Notes:
     Run in ArcMap python window;
@@ -13,16 +12,15 @@ Notes:
 
 '''
 import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
+sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
-from TE_config_Forsythe2014 import *
+from TE_config_ParkerRiver2014 import *
 
 start = time.clock()
 
 """
 Pre-processing
 """
-
 # Check presence of default files in gdb
 extendedTrans = SetInputFCname(home, 'extendedTrans', extendedTrans)
 i_name = SetInputFCname(home, 'inlets delineated (inletLines)', inletLines, system_ext=False)
@@ -72,6 +70,7 @@ else:
 # TRANSECTS - extendedTrans
 # see TE_preprocessing.py
 if not arcpy.Exists(extendedTrans):
+    trans_presort = 'trans_presort_temp'
     CopyAndWipeFC(trans_orig, trans_presort)
     pythonaddins.MessageBox("Now we'll stop so you can copy existing groups of transects to fill in the gaps. If possible avoid overlapping transects", "Created {}. Proceed with manual processing.".format(trans_presort), 0)
     exit()
@@ -87,24 +86,26 @@ if not arcpy.Exists(extendedTrans):
     exit()
 if not arcpy.Exists(extendedTrans):
     # Sort
+    trans_sort_1 = 'trans_sort_temp'
+    trans_sort_ext = 'extTrans_temp'
     trans_sort_1, count1 = SpatialSort(trans_presort,trans_sort_1,"LR",reverse_order=False,sortfield="sort_ID")
     # Extend
-    ExtendLine(trans_sort_1,extendedTrans,extendlength,proj_code)
-    if len(arcpy.ListFields(extendedTrans,'OBJECTID*')) == 2:
-        ReplaceFields(extendedTrans,{'OBJECTID':'OID@'})
+    ExtendLine(trans_sort_1,trans_sort_ext,extendlength,proj_code)
+    if len(arcpy.ListFields(trans_sort_ext,'OBJECTID*')) == 2:
+        ReplaceFields(trans_sort_ext,{'OBJECTID':'OID@'})
+    # Make sure transUIDfield counts from 1
+    # Work with duplicate of original transects to preserve them - version for modification has the year added to the transect filename
+    arcpy.Sort_management(trans_sort_ext,extendedTrans,transUIDfield)
+    with arcpy.da.SearchCursor(extendedTrans, transUIDfield) as cursor:
+        row = next(cursor)
+    # If transUIDfield does not count from 1, adjust the values
+    if row[0] > 1:
+        offset = row[0]-1
+        with arcpy.da.UpdateCursor(extendedTrans, transUIDfield) as cursor:
+            for row in cursor:
+                row[0] = row[0]-offset
+                cursor.updateRow(row)
 
-# Work with duplicate of original transects to preserve them - version for modification has the year added to the transect filename
-arcpy.Sort_management(extendedTrans,extendedTransects,transUIDfield)
-# Make sure transUIDfield counts from 1
-with arcpy.da.SearchCursor(extendedTransects, transUIDfield) as cursor:
-    row = next(cursor)
-# If transUIDfield does not count from 1, adjust the values
-if row[0] > 1:
-    offset = row[0]-1
-    with arcpy.da.UpdateCursor(extendedTransects, transUIDfield) as cursor:
-        for row in cursor:
-            row[0] = row[0]-offset
-            cursor.updateRow(row)
 # TRANSECTS - extTrans_tidy
 if not arcpy.Exists(extTrans_tidy):
     print("Manual work seems necessary to remove transect overlap")
@@ -131,7 +132,7 @@ pythonaddins.MessageBox("Pre-processing completed. Continue with transect extrac
 DeleteTempFiles()
 
 '''_________________PART 1______________________________________________________
-Create Extended transects, DH & DL points within 10m of transects
+Add Feature Positions To Transects, XYZ from DH, DL, & Arm points within 10m of transects
 Requires DH, DL, and SHL points, NA transects
 '''
 
@@ -140,7 +141,7 @@ print "Should take just a few minutes"
 startPart1 = time.clock()
 
 inPts_dict = {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts}
-AddFeaturePositionsToTransects(extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance)
+AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
 
 DeleteTempFiles()
 
@@ -158,103 +159,20 @@ print "Starting part 2"
 print 'Should be quick!'
 startPart2 = time.clock()
 
-
 if not fieldExists(extendedTransects, 'SL_easting'):
-    AddFeaturePositionsToTransects(extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts},  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance)
-CalculateBeachDistances(extendedTransects, maxDH, create_points=True)
-def CalculateBeachDistances(extendedTransects, maxDH, create_points=True):
-    # Set fields that will be used to calculate beach width and store the results
-    fieldlist = ['DL_z','DH_z','Arm_z',
-                'DL_zMHW', 'DH_zMHW','Arm_zMHW',
-                "DistDH", "DistDL", "DistArm",
-                "SL_easting", "SL_northing",
-                "DH_easting", "DH_northing",
-                "DL_easting", "DL_northing",
-                "Arm_easting", "Arm_northing"]
-    beachWidth_fields = ['MLW_easting',
-              'MLW_northing',
-              'beach_h_MHW',
-              'beachWidth_MHW',
-              'beach_h_MLW',
-              'beachWidth_MLW',
-              'CP_easting','CP_northing', # Ben's label for easting and northing of dune point (DL,DH,or DArm) to be used for beachWidth and beach_h_MHW
-              'CP_zMHW']
-    distfields = ['DistDH','DistDL','DistArm'] # distance from shoreline
-    # Add fields if they don't already exist
-    AddNewFields(extendedTransects,fieldlist)
-    #AddNewFields(baseName,'Source_beachwidth','TEXT')
-    AddNewFields(extendedTransects, beachWidth_fields)
-    # Calculate
-    errorct = transectct = 0
-    with arcpy.da.UpdateCursor(extendedTransects,'*') as cursor:
-        for row in cursor:
-            flist = cursor.fields
-            transectct +=1
-            try:
-                row[flist.index('DL_zMHW')] = row[flist.index('DL_z')] + dMHW
-            except TypeError:
-                pass
-            try:
-                row[flist.index('DH_zMHW')] = row[flist.index('DH_z')] + dMHW
-            except TypeError:
-                pass
-            try:
-                row[flist.index('Arm_zMHW')] = row[flist.index('Arm_z')] + dMHW
-            except TypeError:
-                pass
-            # Calc DistDH and DistDL: distance from DH and DL to MHW (ShL_northing,ShL_easting)
-            sl_x = row[flist.index('SL_easting')]
-            sl_y = row[flist.index('SL_northing')]
-            try:
-                row[flist.index('DistDH')] = hypot(sl_x - row[flist.index('DH_easting')], sl_y - row[flist.index('DH_northing')])
-            except TypeError:
-                pass
-            try:
-                row[flist.index('DistDL')] = hypot(sl_x - row[flist.index('DL_easting')], sl_y - row[flist.index('DL_northing')])
-            except TypeError:
-                pass
-            try:
-                row[flist.index('DistArm')] = hypot(sl_x - row[flist.index('Arm_easting')], sl_y - row[flist.index('Arm_northing')])
-            except TypeError:
-                pass
-            # Find which of DL, DH, and Arm is closest to MHW and not Null (exclude DH if higher than maxDH)
-            cp = FindNearestPointWithZvalue(row,flist,distfields,maxDH) # prefix of closest point metric
-            if cp: # if closest point was found calculate beach width with that point, otherwise skip
-                # Calculate beach width = Euclidean distance from dune (DL, DH, or Arm) to MHW and MLW
-                # Set values from each row
-                d_x = row[flist.index(cp+'_easting')]
-                d_y = row[flist.index(cp+'_northing')]
-                b_slope = row[flist.index('Bslope')]
-                sl_x = row[flist.index('SL_easting')]
-                sl_y = row[flist.index('SL_northing')]
-                #beachWidth_MHW = CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y)
-                mlw_x, mlw_y, beachWidth_MLW = CalcBeachWidth_MLW(oMLW,d_x,d_y,b_slope,sl_x,sl_y)
-                beach_h_MHW = row[flist.index(cp+'_zMHW')]
-                # update Row values
-                row[flist.index('MLW_easting')] = mlw_x
-                row[flist.index('MLW_northing')] = mlw_y
-                row[flist.index('beach_h_MHW')] = beach_h_MHW
-                row[flist.index('beachWidth_MHW')] = row[flist.index('Dist'+cp)]
-                row[flist.index('beach_h_MLW')] = beach_h_MHW-oMLW
-                row[flist.index('beachWidth_MLW')] = beachWidth_MLW
-                #row[flist.index('Source_beachwidth')] = cp
-                row[flist.index('CP_easting')] = row[flist.index(cp+'_easting')]
-                row[flist.index('CP_northing')] = row[flist.index(cp+'_northing')]
-                row[flist.index('CP_zMHW')] = row[flist.index(cp+'_zMHW')]
-            else:
-                errorct +=1
-                pass
-            cursor.updateRow(row)
-    # Report
-    print("Beach Width could not be calculated for {} out of {} transects.".format(errorct,transectct))
-    # Create MLW and CP points for error checking
-    if create_points:
-        arcpy.MakeXYEventLayer_management(extendedTransects,'MLW_easting','MLW_northing',MLWpts+'_lyr',utmSR)
-        arcpy.CopyFeatures_management(MLWpts+'_lyr',MLWpts)
-        arcpy.MakeXYEventLayer_management(extendedTransects,'CP_easting','CP_northing',CPpts+'_lyr',utmSR)
-        arcpy.CopyFeatures_management(CPpts+'_lyr',CPpts)
-    # Return
-    return extendedTransects
+    AddFeaturePositionsToTransects(extendedTransects, extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts},  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
+CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, create_points=True)
+
+#FIXME: Populate extTrans_tidy with ALL the new fields
+
+joinfields = ['beachWidth_MHW']
+arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
+arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
+trans_buff = 'transbuffer_temp'
+arcpy.Buffer_analysis(extTrans_tidy, trans_buff, "25 METERS", line_end_type="FLAT", dissolve_option="LIST", dissolve_field=[transUIDfield, 'beachWidth_MHW'])
+arcpy.PolygonToRaster_conversion(trans_buff, 'beachWidth_MHW', beachwidth_rst, cell_assignment='CELL_CENTER', cellsize=5) # cell_center produces gaps only when there is a gap in the features. Max combined area created more gaps.
+
+print("{} have been populated with beach width and used to create {}.".format(extTrans_tidy, beachwidth_rst))
 
 endPart2 = time.clock()
 duration = endPart2 - startPart2
@@ -272,6 +190,11 @@ startPart3 = time.clock()
 
 Dist2Inlet(extendedTransects, shoreline, transUIDfield, xpts='xpts_temp')
 
+joinfields = ['Dist2Inlet']
+arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
+arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
+print("{} have been populated with distance to inlet.".format(extTrans_tidy))
+
 DeleteTempFiles()
 
 endPart3 = time.clock()
@@ -288,43 +211,16 @@ Requires: extended transects, boundary polygon
 print "Starting Part 4"
 startPart4 = time.clock()
 
-"""
-Island width - total land (WidthLand), farthest sides (WidthFull), and segment (WidthPart)
-"""
-# ALTERNATIVE: add start_x, start_y, end_x, end_y to baseName and then calculate Euclidean distance from array
-#arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xptsbarrier_temp',output_type='POINT') # ~40 seconds
-#arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xlinebarrier_temp',output_type='LINE') # ~30 seconds
-#arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH")
-# find farthest point to sl_x, sl_y => WidthFull and closest point => WidthPart
+GetBarrierWidths(extendedTransects, trans_clipped, barrierBoundary)
 
-# Clip transects with boundary polygon
-arcpy.Clip_analysis(extendedTransects, barrierBoundary, baseName) # ~30 seconds
-
-# WidthLand
-ReplaceFields(baseName,{'WidthLand':'SHAPE@LENGTH'})
-
-# WidthFull
-#arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
-# Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
-arcpy.FeatureVerticesToPoints_management(baseName, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
-arcpy.PointsToLine_management("verts_temp","trans_temp",transUIDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
-arcpy.SimplifyLine_cartography("trans_temp", "length_temp","POINT_REMOVE",".01","FLAG_ERRORS","NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
-ReplaceFields("length_temp",{'WidthFull':'SHAPE@LENGTH'})
-# Join clipped transects with full barrier lines and transfer width value
-arcpy.JoinField_management(baseName, transUIDfield, "length_temp", transUIDfield, "WidthFull")
-
-# Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
-arcpy.MultipartToSinglepart_management(baseName,'singlepart_temp')
-ReplaceFields("singlepart_temp",{'WidthPart':'SHAPE@LENGTH'})
-arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
-arcpy.JoinField_management(baseName,transUIDfield,"singlepart_temp",transUIDfield,"WidthPart")
-
+joinfields = ["WidthFull","WidthLand","WidthPart"]
 # Save final transects before moving on to segmenting them
-arcpy.DeleteField_management(extendedTransects, ["WidthFull","WidthLand","WidthPart"]) # in case of reprocessing
-arcpy.JoinField_management(extendedTransects,transUIDfield,baseName,transUIDfield,["WidthFull","WidthLand","WidthPart"])
-print "Final population of " + extendedTransects + " completed. "
-arcpy.FeatureClassToFeatureClass_conversion(extendedTransects,home,transects_final)
-print "Creation of " + transects_final + " completed. "
+arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
+arcpy.JoinField_management(extTrans_tidy,transUIDfield,trans_clipped,transUIDfield,joinfields)
+
+print("Final population of " + extTrans_tidy + " completed. ")
+arcpy.FeatureClassToFeatureClass_conversion(extTrans_tidy,home,transects_final)
+print("Creation of " + transects_final + " completed. ")
 
 # Remove temp files
 DeleteTempFiles()
@@ -345,26 +241,16 @@ print 'Starting Part 5'
 print 'Expect a 3 to 15 minute wait'
 startPart5 = time.clock()
 
-"""
-# Split transects into segments
-"""
-# Convert transects to 5m points: multi to single; split lines; segments to center points
-#arcpy.MultipartToSinglepart_management(baseName, tranSplitPts+'Sing_temp')
-input1 = os.path.join(home,'singlepart_temp')
-output = os.path.join(home, 'singlepart_split_temp')
-arcpy.MultipartToSinglepart_management(baseName, input1)
-arcpy.AddToolbox("C:/ArcGIS/XToolsPro/Toolbox/XTools Pro.tbx")
-arcpy.XToolsGP_SplitPolylines_xtp(input1,output,"INTO_SPECIFIED_SEGMENTS","5 Meters","10","#","#","ORIG_OID")
-arcpy.env.workspace = home #reset workspace - XTools changes default workspace for some reason
-transPts_presort = 'segDistances_presort'
-arcpy.FeatureToPoint_management('singlepart_split_temp',transPts_presort)
 
-"""
+# Split transects into points
+transPts_presort = SplitTransectsToPoints(extTrans_tidy, 'transPts_presort', barrierBoundary, home, clippedtrans='trans_clipped2island')
+
 # Calculate distance of point from shoreline and dunes (Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
 # Requires fields: SL_easting, SL_northing, WidthPart, seg_x, seg_y
-Could be replaced by raster processing... #FIXME
-"""
+#FIXME Could be replaced by raster processing...
+
 ReplaceFields(transPts_presort,{'seg_x':'SHAPE@X','seg_y':'SHAPE@Y'}) # Add xy for each segment center point
+
 distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y', 'SL_easting', 'SL_northing', 'WidthPart', 'DistSegDH', 'DistSegDL','Dist_Seg','DistDH', 'DistDL', 'DistArm', 'DistSegArm']
 AddNewFields(tranSplitPts, distfields)
 with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
@@ -381,33 +267,15 @@ with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
             pass
         try:
             row[flist.index('DistSegDH')] = dist2mhw-row[flist.index('DistDH')]
-        except:
+        except TypeError:
             pass
         try:
             row[flist.index('DistSegDL')] = dist2mhw-row[flist.index('DistDL')]
-        except:
+        except TypeError:
             pass
         try:
             row[flist.index('DistSegArm')] = dist2mhw-row[flist.index('DistArm')]
-        except:
-            pass
-        cursor.updateRow(row)
-
-
-# Sort on transUIDfield and DistSeg (id_temp)
-RemoveLayerFromMXD(transPts_presort)
-arcpy.Sort_management(transPts_presort, tranSplitPts, [[transUIDfield,'ASCENDING'],['Dist_Seg','ASCENDING']])
-ReplaceFields(tranSplitPts,{'SplitSort':'OID@'})
-
-"""
-ReplaceFields(transPts_presort,{'seg_x':'SHAPE@X','seg_y':'SHAPE@Y'}) # Add xy for each segment center point
-AddNewFields(transPts_presort, ["Dist_Seg","Dist_MHWbay"])
-with arcpy.da.UpdateCursor(transPts_presort, ['Dist_Seg','Dist_MHWbay','seg_x','seg_y','SL_easting','SL_northing','WidthPart']) as cursor:
-    for row in cursor:
-        try:
-            row[0] = dist2mhw = math.sqrt((row[2] -row[4])**2 + (row[3] - row[5])**2) # hypot(row[4]-row[2],row[5]-row[3])
-            row[1] = row[6] - dist2mhw
-        except:
+        except TypeError:
             pass
         cursor.updateRow(row)
 
@@ -416,39 +284,9 @@ RemoveLayerFromMXD(transPts_presort)
 arcpy.Sort_management(transPts_presort, tranSplitPts, [[transUIDfield,'ASCENDING'],['Dist_Seg','ASCENDING']])
 ReplaceFields(tranSplitPts,{'SplitSort':'OID@'})
 
-# Calculate DistSeg* = distance of point from *
-# Requires fields: DistDH, DistDL, DistArm, Dist_Seg
-distfields = ['DistSegDH','DistSegDL','Dist_Seg','DistDH','DistDL','DistArm','DistSegArm']
-AddNewFields(tranSplitPts, distfields)
-with arcpy.da.UpdateCursor(tranSplitPts, distfields) as cursor:
-    for row in cursor:
-        flist = cursor.fields
-        try:
-            row[flist.index('DistSegDH')] = row[flist.index('Dist_Seg')]-row[flist.index('DistDH')]
-        except:
-            pass
-        try:
-            row[flist.index('DistSegDL')] = row[flist.index('Dist_Seg')]-row[flist.index('DistDL')]
-        except:
-            pass
-        try:
-            row[flist.index('DistSegArm')] = row[flist.index('Dist_Seg')]-row[flist.index('DistArm')]
-        except:
-            pass
-        cursor.updateRow(row)
-"""
 # Tidy up
 arcpy.DeleteField_management(tranSplitPts,["StartX","StartY","ORIG_FID"])
 DeleteTempFiles()
-
-"""
-Save feature class and shapefile with just beach width and sort_ID fields
-"""
-fmap = """sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,{site}{year}_transPts_working,sort_ID,-1,-1;beachWidth_MHW "beachWidth_MHW" true true false 8 Double 0 0 ,First,#,{site}{year}_transPts_working,beachWidth_MHW,-1,-1""".format(**SiteYear_strings)
-arcpy.FeatureClassToFeatureClass_conversion(tranSplitPts,home,tranSplitPts_bw,field_mapping=fmap)
-#DeleteExtraFields(tranSplitPts_bw,['sort_ID','SplitSort','beachWidth_MHW'])
-ReplaceValueInFC(tranSplitPts_bw,[], None, fill)
-arcpy.FeatureClassToFeatureClass_conversion(tranSplitPts_bw,out_dir,tranSplitPts_bw+'.shp')
 
 # Report time
 endPart5 = time.clock()
