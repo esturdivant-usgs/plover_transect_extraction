@@ -1,3 +1,4 @@
+
 '''
 Deep dive Transect Extraction
 Requires: python 2.7, Arcpy
@@ -35,9 +36,9 @@ ShorelinePts = SetInputFCname(home, 'shoreline points (ShorelinePts)', Shoreline
 
 # DUNE POINTS
 # Replace fill values with Null
-ReplaceValueInFC(dhPts,["dhigh_z"])
-ReplaceValueInFC(dlPts,["dlow_z"])
-ReplaceValueInFC(ShorelinePts,["slope"])
+ReplaceValueInFC(dhPts, oldvalue=fill, newvalue=None, fields=["dhigh_z"])
+ReplaceValueInFC(dlPts, oldvalue=fill, newvalue=None, fields=["dlow_z"])
+ReplaceValueInFC(ShorelinePts, oldvalue=fill, newvalue=None, fields=["slope"])
 # Populate ID with OID?
 
 # INLETS
@@ -136,159 +137,67 @@ DeleteTempFiles()
 Add Feature Positions To Transects, XYZ from DH, DL, & Arm points within 10m of transects
 Requires DH, DL, and SHL points, NA transects
 '''
-
-print "Starting Part 1"
-print "Should take just a few minutes"
-startPart1 = time.clock()
-
 inPts_dict = {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts}
-AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
+AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)
 
 DeleteTempFiles()
-
-endPart1 = time.clock()
-duration = endPart1 - startPart1
-hours, remainder = divmod(duration, 3600)
-minutes, seconds = divmod(remainder, 60)
-print "Part 1 completed in %dh:%dm:%fs" % (hours, minutes, seconds)
 
 '''___________________PART 2____________________________________________________
 Calculate distances (beach height, beach width, beach slope, max elevation)
 Requires: transects with shoreline and dune position information
 '''
-print "Starting part 2"
-print 'Should be quick!'
-startPart2 = time.clock()
-
-if not fieldExists(extendedTransects, 'SL_easting'):
-    AddFeaturePositionsToTransects(extendedTransects, extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts},  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
+print("Starting part 2 - Calculate beach geometry - Should be quick!")
 CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, create_points=True)
-
-# Populate extTrans_tidy with ALL the new fields
-newfields = ['DL_z','DH_z','Arm_z',
-            'DL_zMHW', 'DH_zMHW','Arm_zMHW',
-            "DistDH", "DistDL", "DistArm",
-            "SL_easting", "SL_northing",
-            "DH_easting", "DH_northing",
-            "DL_easting", "DL_northing",
-            "Arm_easting", "Arm_northing",
-            'MLW_easting','MLW_northing',
-          'beach_h_MHW','beachWidth_MHW',
-          'beach_h_MLW','beachWidth_MLW',
-          'CP_easting','CP_northing','CP_zMHW'] # Ben's label for easting and northing of dune point (DL,DH,or DArm) to be used for beachWidth and beach_h_MHW
-arcpy.DeleteField_management(extTrans_tidy, newfields) # in case of reprocessing
-arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,newfields)
-
-
-#####
-# Beach width raster
-#####
-
-
-
-"""
-# v1
-joinfields = ['beachWidth_MHW']
-arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
-arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
-trans_buff = 'transbuffer_temp'
-arcpy.Buffer_analysis(extTrans_tidy, trans_buff, "25 METERS", line_end_type="FLAT", dissolve_option="LIST", dissolve_field=[transUIDfield, 'beachWidth_MHW'])
-arcpy.PolygonToRaster_conversion(trans_buff, 'beachWidth_MHW', beachwidth_rst, cell_assignment='CELL_CENTER', cellsize=5) # cell_center produces gaps only when there is a gap in the features. Max combined area created more gaps.
-"""
-print("{} have been populated with beach width and used to create {}.".format(extTrans_tidy, beachwidth_rst))
-
-endPart2 = time.clock()
-duration = endPart2 - startPart2
-hours, remainder = divmod(duration, 3600)
-minutes, seconds = divmod(remainder, 60)
-print "Part 2 completed in %dh:%dm:%fs" % (hours, minutes, seconds)
 
 
 '''_________________PART 3______________________________________________________
 Dist2Inlet: Calc dist from inlets
 # Requires transects and shoreline
 '''
-print "Starting Part 3"
-startPart3 = time.clock()
+print "Starting Part 3 - Distance to Inlet"
 
+# Run Dist2Inlet
 Dist2Inlet(extendedTransects, shoreline, transUIDfield, xpts='xpts_temp')
 
-joinfields = ['Dist2Inlet']
-arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
-arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
-print("{} have been populated with distance to inlet.".format(extTrans_tidy))
-
 DeleteTempFiles()
-
-endPart3 = time.clock()
-duration = endPart3 - startPart3
-hours, remainder = divmod(duration, 3600)
-minutes, seconds = divmod(remainder, 60)
-print "Part 4 completed in %dh:%dm:%fs" % (hours, minutes, seconds)
 
 '''___________________PART 4____________________________________________________
 Clip transects, get barrier widths
 Requires: extended transects, boundary polygon
 '''
 
-print "Starting Part 4"
-startPart4 = time.clock()
-
+print "Starting Part 4 - Get barrier widths and output transects"
 GetBarrierWidths(extendedTransects, trans_clipped, barrierBoundary)
 
-joinfields = ["WidthFull","WidthLand","WidthPart"]
+'''___________________OUTPUT TRANSECTS___________________________________________________
+Output populated transects as: extendedTransects, extTrans_tidy, rst_transPopulated
+Requires: extended transects, extTrans_tidy
+'''
 
+# Check that transects have all fields from previous parts
+fieldlist = transect_fields_part1 +transect_fields_part2 +transect_fields_part3 +transect_fields_part4
+for fname in fieldlist:
+    if not fieldExists(extendedTransects, fname):
+        print("Field '{}' not present in transects file '{}'.".format(fname, extendedTransects))
+        exit()
+        #FIXME: conditionally execute next part...
+
+# OUTPUT: fully populated extTrans_tidy
+# Join the new fields to extTrans_tidy, already present in extendedTransects
+joinfields = transect_fields_part1 +transect_fields_part2 +transect_fields_part3 +transect_fields_part4
 arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
-arcpy.JoinField_management(extTrans_tidy,transUIDfield,trans_clipped,transUIDfield,joinfields)
-print("Final population of {} completed. Now creating a raster version as {}. ".format(extTrans_tidy))
+arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
+print("Final population of {} complete. Now creating a raster version as {}. ".format(extTrans_tidy, rst_transPopulated))
 
-
-
-#FIXME
+# OUTPUT: raster version of populated transects (with fill values)
 extTrans_tidy_fill = extTrans_tidy+'_fill'
 arcpy.FeatureClassToFeatureClass_conversion(extTrans_tidy, home, extTrans_tidy_fill)
-ReplaceValueInFC(extTrans_tidy_fill,[], None, fill)
-
-JoinFCtoRaster(rst_transPopulated, extTrans_tidy, rst_transID, transUIDfield='sort_ID')
-
-def JoinFCtoRaster(out_rst, in_fc, in_rst, use_fill_values=True, transUIDfield='sort_ID'):
-    if not arcpy.Exists(in_rst):
-        in_rst = TransectsToContinuousRaster(extTrans_tidy, in_rst, cellsize_rst, transUIDfield)
-    arcpy.MakeTableView_management(in_fc, 'tableview')
-    # if use_fill_values:
-    #     ReplaceValueInFC('tableview',[], None, fill)
-    arcpy.MakeRasterLayer_management(in_rst, 'rst_lyr')
-    arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', transUIDfield)
-    arcpy.CopyRaster_management('rst_lyr', out_rst)
-    return out_rst
-"""
-# Get raster of transect IDs
-if not arcpy.Exists(rst_transID):
-    rst_transID = TransectsToContinuousRaster(extTrans_tidy, rst_transID, cellsize_rst, transUIDfield)
-arcpy.MakeTableView_management(extTrans_tidy, 'trans_tableview')
-arcpy.MakeRasterLayer_management(rst_transID, 'rst_trans_lyr')
-arcpy.AddJoin_management('rst_trans_lyr', 'Value', 'trans_tableview', transUIDfield)
-arcpy.env.outputCoordinateSystem = utmSR
-arcpy.env.scratchWorkspace = home
-arcpy.CopyRaster_management('rst_trans_lyr', rst_transPopulated)
-"""
-
-
-
-# Save final transects before moving on to segmenting them
-arcpy.FeatureClassToFeatureClass_conversion(extTrans_tidy,home,transects_final)
-print("Creation of " + transects_final + " completed. ")
+ReplaceValueInFC(extTrans_tidy_fill, None, fill)
+# Join all fields to raster
+JoinFCtoRaster(in_fc=extTrans_tidy_fill, in_rst=rst_transID, out_rst=rst_transPopulated,  transUIDfield='sort_ID') # will create raster of transect ID if not already present.
 
 # Remove temp files
 DeleteTempFiles()
-
-endPart4 = time.clock()
-duration = endPart4 - startPart4
-hours, remainder = divmod(duration, 3600)
-minutes, seconds = divmod(remainder, 60)
-print "Part 2 completed in %dh:%dm:%fs" % (hours, minutes, seconds)
-
-
 
 
 '''______________________PART 5_________________________________________________
@@ -300,43 +209,22 @@ print 'Starting Part 5'
 print 'Expect a 3 to 15 minute wait'
 startPart5 = time.clock()
 
-#FIXME: may not be necessary to join before converting to points...
-if not fieldExists(extTrans_tidy,'DistDH'):
-    if not fieldExists(extendedTransects, 'SL_easting'):
-        AddFeaturePositionsToTransects(extendedTransects, extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts},  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home)
-    if not fieldExists(extendedTransects, 'beachWidth_MHW'):
-        CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, create_points=True)
-    joinfields = ['SL_easting', 'SL_northing','DistDH', 'DistDL', 'DistArm']
-    arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
-    arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
-if not fieldExists(extTrans_tidy, 'WidthPart'):
-    if not fieldExists(extTrans_tidy, "WidthPart"):
-        GetBarrierWidths(extendedTransects, trans_clipped, barrierBoundary)
-    joinfields = ["WidthFull","WidthLand","WidthPart"]
-    # Save final transects before moving on to segmenting them
-    arcpy.DeleteField_management(extTrans_tidy, joinfields) # in case of reprocessing
-    arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,joinfields)
-
 # Split transects into points
 transPts_presort = SplitTransectsToPoints(extTrans_tidy, 'transPts_presort', barrierBoundary, home, clippedtrans='trans_clipped2island')
 
 # Calculate distance of point from shoreline and dunes (Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
-# Requires fields: SL_easting, SL_northing, WidthPart, seg_x, seg_y
-#FIXME Could be replaced by raster processing...
-
 ReplaceFields(transPts_presort,{'seg_x':'SHAPE@X','seg_y':'SHAPE@Y'}) # Add xy for each segment center point
-
 # extTrans_tidy must have SL_easting, SL_northing, and WidthPart
-distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y', 'SL_easting', 'SL_northing', 'WidthPart', 'DistSegDH', 'DistSegDL','Dist_Seg','DistDH', 'DistDL', 'DistArm', 'DistSegArm']
+distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y', 'DistSegDH', 'DistSegDL','Dist_Seg','DistDH', 'DistDL', 'DistArm', 'DistSegArm']
 AddNewFields(transPts_presort, distfields)
-with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
+with arcpy.da.UpdateCursor(transPts_presort, "*") as cursor:
     for row in cursor:
         flist = cursor.fields
         try:
             seg_x = row[flist.index('seg_x')]
-            SL_easting = row[flist.index('SL_easting')]
+            SL_easting = row[flist.index('SL_x')]
             seg_y = row[flist.index('seg_y')]
-            SL_northing = row[flist.index('SL_northing')]
+            SL_northing = row[flist.index('SL_y')]
             row[flist.index('Dist_Seg')] = dist2mhw = math.sqrt((seg_x - SL_easting)**2 + (seg_y - SL_northing)**2) # hypot(row[4]-row[2],row[5]-row[3])
             row[flist.index('Dist_MHWbay')] = row[flist.index('WidthPart')] - dist2mhw
             try:
@@ -356,9 +244,8 @@ with arcpy.da.UpdateCursor(transPts_presort, distfields) as cursor:
         cursor.updateRow(row)
 
 # Sort on transUIDfield and DistSeg (id_temp)
-if open_mxd: #FIXME
-    RemoveLayerFromMXD(transPts_presort)
-arcpy.Sort_management(transPts_presort, tranSplitPts, [[transUIDfield,'ASCENDING'],['Dist_Seg','ASCENDING']])
+RemoveLayerFromMXD(transPts_presort)
+arcpy.Sort_management(transPts_presort, tranSplitPts, [[transUIDfield, 'ASCENDING'], ['Dist_Seg', 'ASCENDING']])
 ReplaceFields(tranSplitPts,{'SplitSort':'OID@'})
 
 # Tidy up
@@ -401,48 +288,74 @@ if not arcpy.Exists(slopeGrid):
 #Get elevation and slope at points ### TAKES A WHILE
 if arcpy.Exists(pts_elevslope):
     # Join elevation and slope values from a previous iteration of the script
-    arcpy.JoinField_management(tranSplitPts,"SplitSort",pts_elevslope,"SplitSort",['PointZ','PointZ_mhw','PointSlp'])
+    arcpy.JoinField_management(tranSplitPts,"SplitSort",pts_elevslope,"SplitSort",['ptZ','ptZmhw','ptSlp'])
 else:
-    arcpy.sa.ExtractMultiValuesToPoints(tranSplitPts,[[elevGrid_5m,'PointZ'],[slopeGrid,'PointSlp']])
-    AddNewFields(tranSplitPts, 'PointZ_mhw')
-    with arcpy.da.UpdateCursor(tranSplitPts,['PointZ','PointZ_mhw']) as cursor:
+    arcpy.DeleteField_management(tranSplitPts,['ptZ','ptSlp']) # in case of reprocessing
+    arcpy.sa.ExtractMultiValuesToPoints(tranSplitPts,[[elevGrid_5m,'ptZ'],[slopeGrid,'ptSlp']])
+    AddNewFields(tranSplitPts, 'ptZmhw')
+    with arcpy.da.UpdateCursor(tranSplitPts,['ptZ','ptZmhw']) as cursor:
         for row in cursor:
             try:
                 row[1] = row[0] - MHW
             except:
                 pass
             cursor.updateRow(row)
-
-    arcpy.CopyFeatures_management(tranSplitPts,pts_elevslope)
+    # Save pts with elevation and slope to archived file
+    fieldlist = ['SplitSort', 'ptZ', 'ptSlp', 'ptZmhw']
+    fmaps = arcpy.FieldMappings()
+    for f in fieldlist:
+        fm = arcpy.FieldMap()
+        fm.addInputField(tranSplitPts, f)
+        fmaps.addFieldMap(fm)
+    arcpy.FeatureClassToFeatureClass_conversion(tranSplitPts,home, pts_elevslope, field_mapping=fmaps)
 
 """
 # Get max_Z and mean_Z for each transect
 """
 # save max and mean in out_stats table using Statistics_analysis
-out_stats = "avgZ_byTransect"
-arcpy.Statistics_analysis(tranSplitPts,out_stats,
-    [['PointZ_mhw','MAX'],['PointZ_mhw','MEAN'],['PointZ_mhw','COUNT']],transUIDfield)
+arcpy.Statistics_analysis(tranSplitPts, out_stats, [['ptZmhw', 'MAX'], ['ptZmhw', 'MEAN'], ['ptZmhw', 'COUNT']], transUIDfield)
 # remove mean values if fewer than 80% of 5m points had elevation values
 with arcpy.da.UpdateCursor(out_stats,['*']) as cursor:
     for row in cursor:
-        if row[cursor.fields.index('COUNT_PointZ_mhw')]/row[cursor.fields.index('FREQUENCY')] <= 0.8:
-            row[cursor.fields.index('MEAN_PointZ_mhw')] = None
+        if row[cursor.fields.index('COUNT_ptZmhw')] is None:
+            row[cursor.fields.index('MEAN_ptZmhw')] = None
+            cursor.updateRow(row)
+        elif row[cursor.fields.index('COUNT_ptZmhw')] /row[cursor.fields.index('FREQUENCY')] <= 0.8:
+            row[cursor.fields.index('MEAN_ptZmhw')] = None
             cursor.updateRow(row)
 
+
 # add mean and max fields to points FC using JoinField_management
-arcpy.JoinField_management(tranSplitPts,transUIDfield,out_stats,transUIDfield,['MAX_PointZ_mhw','MEAN_PointZ_mhw']) # very slow ~1 hr for Monomoy
+arcpy.JoinField_management(tranSplitPts,transUIDfield,out_stats,transUIDfield,['MAX_ptZmhw','MEAN_ptZmhw']) # very slow ~1 hr for Monomoy
+arcpy.JoinField_management(extendedTransects,transUIDfield,out_stats,transUIDfield,['MAX_ptZmhw','MEAN_ptZmhw']) # very slow ~1 hr for Monomoy
 
 """
 Save final files
 """
+fieldlist = transect_fields_v1 +transect_fields_v2 +transect_fields_part3 +transect_fields_part4
+for fname in fieldlist:
+    if not fieldExists(tranSplitPts, fname):
+        print("Field '{}' not present in 5m points file '{}'.".format(fname, tranSplitPts))
+# Save final transect points before moving on to segmenting them
+arcpy.DeleteField_management(tranSplitPts, fieldlist) # in case of reprocessing
+arcpy.JoinField_management(tranSplitPts,transUIDfield, extendedTransects,transUIDfield,fieldlist)
+
+# Save final transects with fill values
+extendedTransects_fill = extendedTrans+'_populated_fill'
+arcpy.FeatureClassToFeatureClass_conversion(extendedTransects, home, extendedTransects_fill)
+ReplaceValueInFC(extendedTransects_fill, None, fill)
+arcpy.FeatureClassToFeatureClass_conversion(extendedTransects_fill,out_dir,extendedTransects_fill+'.shp')
+arcpy.TableToTable_conversion(extendedTransects_fill, out_dir, extendedTransects_fill+'.csv')
+JoinFCtoRaster(in_fc=extendedTransects_fill, in_rst=rst_transID, out_rst=rst_transPopulated+'_Zavg',  transUIDfield='sort_ID') # will create raster of transect ID if not already present.
+
 # Save pts as feature class with Nulls (transSplitPts_final)
 arcpy.FeatureClassToFeatureClass_conversion(tranSplitPts,home,tranSplitPts_null)
 arcpy.FeatureClassToFeatureClass_conversion(tranSplitPts,home,tranSplitPts_fill)
-ReplaceValueInFC(tranSplitPts_fill,[], None, fill)
+ReplaceValueInFC(tranSplitPts_fill,None, fill)
 arcpy.FeatureClassToFeatureClass_conversion(tranSplitPts_fill,out_dir,tranSplitPts_shp+'.shp')
 arcpy.TableToTable_conversion(tranSplitPts_fill, out_dir, tranSplitPts_fill+'.csv')
 
-finalmessage = "The final products ("+tranSplitPts_shp+") were exported as a shapefile and CSV to "+out_dir+". \n" \
+finalmessage = "The final products ({}) were exported as a shapefile and CSV to {}. \n".format(tranSplitPts_shp, out_dir) \
       "\nNow enter the USER to save the table: \n\n" \
       "1. Open the CSV in Excel and then Save as... a .xlsx file. \n" \
       "2. Open the XLS file in Matlab with the data checking script to check for errors! "

@@ -82,15 +82,18 @@ tranSplitPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
 tranSplitPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 tranSplitPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
+out_stats = os.path.join(home,"avgZ_byTransect")
 extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
+
+transPts_presort = 'transPts_presort'
 
 rst_transID = "{site}{year}_rstTransID".format(**SiteYear_strings)
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"
-fill = -99999	  					# Replace Nulls with
+fill = 9999	  					# Replace Nulls with
 pt2trans_disttolerance = "25 METERS"        # Maximum distance that point can be from transect and still be joined; originally 10 m
 if SiteYear_strings['site'] == 'Monomoy':
     maxDH = 3
@@ -104,3 +107,30 @@ if SiteYear_strings['region'] == 'Massachusetts' or SiteYear_strings['region'] =
 else:
     proj_code = 26918 # "NAD 1983 UTM Zone 18N"
     utmSR = arcpy.SpatialReference(proj_code)
+
+########### Field names ##########################
+transect_fields_part0 = ['sort_ID','TRANSORDER', 'TRANSECTD', 'LRR', 'LR2', 'LSE', 'LCI90']
+transect_fields_v1 = ['SL_Lat', 'SL_Lon', 'SL_easting', 'SL_northing', 'Bslope',
+    'DL_Lat', 'DL_Lon', 'DL_easting', 'DL_northing', 'DL_z', 'DL_zMHW',
+    'DH_Lat', 'DH_Lon', 'DH_easting', 'DH_northing', 'DH_z', 'DH_zMHW',
+    'Arm_Lat', 'Arm_Lon', 'Arm_easting', 'Arm_northing', 'Arm_z', 'Arm_zMHW',
+    'DistDH', 'DistDL', 'DistArm']
+transect_fields_part1 = ['SL_Lat', 'SL_Lon', 'SL_x', 'SL_y', 'Bslope',
+    'DL_Lat', 'DL_Lon', 'DL_x', 'DL_y', 'DL_z', 'DL_zMHW',
+    'DH_Lat', 'DH_Lon', 'DH_x', 'DH_y', 'DH_z', 'DH_zMHW',
+    'Arm_Lat', 'Arm_Lon', 'Arm_x', 'Arm_y', 'Arm_z', 'Arm_zMHW',
+    'DistDH', 'DistDL', 'DistArm']
+transect_fields_v2 = ['MLW_easting','MLW_northing',
+  'beach_h_MHW','beachWidth_MHW',
+  'beach_h_MLW','beachWidth_MLW',
+  'CP_easting','CP_northing','CP_zMHW']
+transect_fields_part2 = ['MLW_x','MLW_y',
+   'bh_mhw','bw_mhw',
+   'bh_mlw','bw_mlw',
+   'CP_x','CP_y','CP_zMHW']
+transect_fields_part3 = ['Dist2Inlet']
+transect_fields_part4 = ['WidthPart', 'WidthLand', 'WidthFull']
+transPt_fields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
+    'DistSegDH', 'DistSegDL', 'DistSegArm',
+    'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
+    'MAX_ptZmhw', 'MEAN_ptZmhw']
