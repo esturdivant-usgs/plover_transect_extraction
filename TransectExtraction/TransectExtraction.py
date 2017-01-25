@@ -80,11 +80,13 @@ def AddNewFields(fc,fieldlist,fieldtype="DOUBLE", verbose=True):
             if verbose:
                 print 'Added '+newfname+' field to '+fc
         return fc
-    if type(fieldlist) is list or type(fieldlist) is tuple:
+    if type(fieldlist) is str:
+        AddNewField(fc, fieldlist, fieldtype, verbose)
+    elif type(fieldlist) is list or type(fieldlist) is tuple:
         for newfname in fieldlist:
             AddNewField(fc, newfname, fieldtype, verbose)
     else:
-        AddNewField(fc, fieldlist, fieldtype, verbose)
+        print("fieldlist accepts string, list, or tuple of field names. {} type not accepted.".format(type(fieldlist)))
     return fc
 
 def DeleteExtraFields(inTable,keepfields=[]):
@@ -124,7 +126,7 @@ def newcoord(coords, dist):
 
     x3 = x2 + dx/linelen * dist
     y3 = y2 + dy/linelen * dist
-    return x3, y3
+    return x3, y3, linelen
 
 def ReplaceFields(fc,newoldfields,fieldtype='DOUBLE'):
     # Use tokens to save geometry properties as attributes
@@ -176,9 +178,7 @@ def AddXYAttributes(fc,newfc,prefix,proj_code=26918):
 
 def ReplaceValueInFC(fc,oldvalue=-99999,newvalue=None, fields=[]):
     # Replace oldvalue with newvalue in fields in fc
-    flds = [f.name for f in arcpy.ListFields(fc, field_type='DOUBLE')]
-    #flds.append(arcpy.ListFields(fc, field_type='DOUBLE'))
-    with arcpy.da.UpdateCursor(fc, flds) as cursor:
+    with arcpy.da.UpdateCursor(fc, fields) as cursor:
         fieldindex = range(len(cursor.fields))
         for row in cursor:
             for i in fieldindex:
@@ -265,7 +265,8 @@ def ExtendLine(fc,new_fc,distance,proj_code=26918):
     lastpoint = [point for x,point in enumerate(vert) if x+1 in vertcounts or x+2 in vertcounts]
     # Obtain list of tuples of new end coordinates by converting flat list of tuples to list of lists of tuples.
     distance = float(distance)
-    newvert = [newcoord(y, distance) for y in zip(*[iter(lastpoint)]*2)]
+    nx, ny, dist = [newcoord(y, distance) for y in zip(*[iter(lastpoint)]*2)]
+    newvert = (nx, ny)
     j = 0
     with arcpy.da.UpdateCursor(new_fc, "SHAPE@XY", explode_to_points=True) as cursor:
         for i,row in enumerate(cursor):
@@ -548,9 +549,11 @@ def JoinFields(fc,sourcefile,joinfieldsdict,joinfields=['sort_ID']):
     #arcpy.Delete_management(os.path.join(arcpy.env.workspace,sourcefile))
     return fc
 
-def ShorelinePtsToTransects(extendedTransects, shoreline, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance):
+def ShorelinePtsToTransects(extendedTransects, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance):
     shl2trans = 'SHL2trans'
     shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
+    shoreline = inPtsDict['shoreline']
+    ShorelinePts = inPtsDict['ShorelinePts']
     arcpy.Intersect_analysis((shoreline,extendedTransects), shl2trans+'_temp', output_type='POINT')
     AddXYAttributes(fc=shl2trans+'_temp',newfc=shl2trans,prefix='SL',proj_code=proj_code) # Add lat lon and x y fields to create SHL2trans
     # Add slope from ShorelinePts to shoreline intersection with transects (which replace the XY values from the original shoreline points)
@@ -572,7 +575,7 @@ def ArmorLineToTransects(out_fc, armorLines, transUIDfield, proj_code, tempfile,
         DeleteExtraFields(armorLines)
         arcpy.Intersect_analysis((armorLines,out_fc), tempfile, output_type='POINT')
         AddXYAttributes(tempfile,arm2trans,'Arm',proj_code)
-        arcpy.AddField_management(arm2trans,armz)
+        AddNewFields(arm2trans,armz,fieldtype="DOUBLE")
         # Get elevation at points
         if arcpy.Exists(elevGrid_5m):
             arcpy.sa.ExtractMultiValuesToPoints(arm2trans,[[elevGrid_5m, 'z_tmp']]) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
@@ -586,7 +589,7 @@ def ArmorLineToTransects(out_fc, armorLines, transUIDfield, proj_code, tempfile,
     # How do I know which point will be encountered first? - don't want those in back to take the place of
     return out_fc
 
-def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m):
+def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m):
     # Add Feature Positions To Transects, XYZ from DH, DL, & Arm points within 10m of transects
     # Requires DH, DL, and SHL points, NA transects
     startPart1 = time.clock()
@@ -594,7 +597,7 @@ def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict,  shoreline, armo
     if not in_trans == out_fc:
         arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
     # Shoreline
-    ShorelinePtsToTransects(out_fc, shoreline, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance)
+    ShorelinePtsToTransects(out_fc, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance)
     # Armor
     ArmorLineToTransects(out_fc, armorLines, transUIDfield, proj_code, tempfile, elevGrid_5m)
     # Dunes
@@ -764,12 +767,10 @@ def CalcBeachWidth_MLW(oMLW,d_x,d_y,b_slope,sl_x,sl_y):
         # Calculate Euclidean distance between MHW and MLW based on slope and MLW adjustment
         MLWdist = abs(oMLW/b_slope) # 1/17: ADDED abs()
         # Find coordinates of MLW based on transect azimuth and MLWdist
-        mlw_x, mlw_y = newcoord([(d_x,d_y),(sl_x,sl_y)],MLWdist)
+        mlw_x, mlw_y, bw_mlw = newcoord([(d_x,d_y), (sl_x,sl_y)], abs(oMLW/b_slope))
 
         # 6 Calculate beach width = Euclidean distance from dune to MLW
-        dx = mlw_x - d_x
-        dy = mlw_y - d_y
-        bw_mlw = hypot(dx, dy)
+        #bw_mlw = hypot(mlw_x - d_x, mlw_y - d_y)
 
         output = [mlw_x, mlw_y, bw_mlw]
     except TypeError:
@@ -823,33 +824,30 @@ def CalcBeachWidthGeometry(MLW,dune_lon,dune_lat,beach_z,beach_slope,SL_Lon,SL_L
         output = [None, None, None, None, None, None]
     return output
 """
-def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, create_points=True):
+def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, create_points=True, skip_field_check=False):
     # Calculate distances (beach height, beach width, beach slope, max elevation)
     # Requires: transects with shoreline and dune position information
     startPart2 = time.clock()
+    # Set fields that will be used to calculate beach width and store the results
+    in_fields = ['DL_z','DH_z','Arm_z',"SL_x", "SL_y",
+                "DH_x", "DH_y","DL_x", "DL_y", "Arm_x", "Arm_y"]
+    # List fields to be created and populated
+    out_fields1 = ['DL_zMHW', 'DH_zMHW','Arm_zMHW',
+                "DistDH", "DistDL", "DistArm"]
+    beachWidth_fields = ['bh_mhw', 'bw_mhw', 'bh_mlw', 'bw_mlw',
+              'CP_x','CP_y', 'CP_zMHW','MLW_x', 'MLW_y']# Ben's label for easting and northing of dune point (DL,DH,or DArm) to be used for beachWidth and bh_mhw
+    distfields = ['DistDH','DistDL','DistArm'] # distance from shoreline
+    # Check for necessary fields
+    if not skip_field_check:
+        for fname in in_fields:
+            if not fieldExists(in_trans, fname):
+                print("Field '{}' not present in transects file '{}'. We recommend running            AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)".format(fname, in_trans))
+                return False
+    # Copy in_trans to out_fc if the output will be different than the input
     if not in_trans == out_fc:
         arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
-    # Set fields that will be used to calculate beach width and store the results
-    fieldlist = ['DL_z','DH_z','Arm_z',
-                'DL_zMHW', 'DH_zMHW','Arm_zMHW',
-                "DistDH", "DistDL", "DistArm",
-                "SL_x", "SL_y",
-                "DH_x", "DH_y",
-                "DL_x", "DL_y",
-                "Arm_x", "Arm_y"]
-    beachWidth_fields = ['MLW_x',
-              'MLW_y',
-              'bh_mhw',
-              'bw_mhw',
-              'bh_mlw',
-              'bw_mlw',
-              'CP_x','CP_y', # Ben's label for easting and northing of dune point (DL,DH,or DArm) to be used for beachWidth and bh_mhw
-              'CP_zMHW']
-    distfields = ['DistDH','DistDL','DistArm'] # distance from shoreline
     # Add fields if they don't already exist
-    AddNewFields(out_fc,fieldlist)
-    #AddNewFields(baseName,'Source_beachwidth','TEXT')
-    AddNewFields(out_fc, beachWidth_fields)
+    AddNewFields(out_fc, out_fields1 + beachWidth_fields)
     # Calculate
     errorct = transectct = 0
     with arcpy.da.UpdateCursor(out_fc,'*') as cursor:
@@ -894,13 +892,17 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, create_points=T
                 sl_x = row[flist.index('SL_x')]
                 sl_y = row[flist.index('SL_y')]
                 #bw_mhw = CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y)
-                mlw_x, mlw_y, bw_mlw = CalcBeachWidth_MLW(oMLW,d_x,d_y,b_slope,sl_x,sl_y)
-                bh_mhw = row[flist.index(cp+'_zMHW')]
+                try:
+                    mlw_x, mlw_y, bw_mlw = newcoord([(d_x,d_y), (sl_x,sl_y)], abs(oMLW/b_slope))
+                except TypeError:
+                    mlw_x, mlw_y, bw_mlw = [None, None, None]
+                    pass
                 # update Row values
                 row[flist.index('MLW_x')] = mlw_x
                 row[flist.index('MLW_y')] = mlw_y
-                row[flist.index('bh_mhw')] = bh_mhw
-                row[flist.index('bw_mhw')] = row[flist.index('Dist'+cp)]
+                row[flist.index('bh_mhw')] = row[flist.index(cp+'_zMHW')]
+                bh_mhw = row[flist.index('Dist'+cp)]
+                row[flist.index('bw_mhw')] = bh_mhw
                 row[flist.index('bh_mlw')] = bh_mhw-oMLW
                 row[flist.index('bw_mlw')] = bw_mlw
                 #row[flist.index('Source_beachwidth')] = cp
@@ -928,7 +930,7 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, create_points=T
     # Return
     return out_fc
 
-def GetBarrierWidths(in_trans, out_fc, barrierBoundary, transUIDfield, shoreline):
+def GetBarrierWidths(in_trans, barrierBoundary, shoreline, transUIDfield='sort_ID', clipped_trans='trans_clipped2island_temp'):
     """
     Island width - total land (WidthLand), farthest sides (WidthFull), and segment (WidthPart)
     """
@@ -939,38 +941,40 @@ def GetBarrierWidths(in_trans, out_fc, barrierBoundary, transUIDfield, shoreline
     #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH")
     # find farthest point to sl_x, sl_y => WidthFull and closest point => WidthPart
     # Clip transects with boundary polygon
-    arcpy.Clip_analysis(in_trans, barrierBoundary, out_fc) # ~30 seconds
+    arcpy.Clip_analysis(in_trans, barrierBoundary, clipped_trans) # ~30 seconds
     # WidthLand
-    ReplaceFields(out_fc,{'WidthLand':'SHAPE@LENGTH'})
+    ReplaceFields(clipped_trans,{'WidthLand':'SHAPE@LENGTH'})
     # WidthFull
     #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
     # Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
-    arcpy.FeatureVerticesToPoints_management(out_fc, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
+    arcpy.FeatureVerticesToPoints_management(clipped_trans, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
     arcpy.PointsToLine_management("verts_temp","trans_temp",transUIDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
     arcpy.SimplifyLine_cartography("trans_temp", "length_temp","POINT_REMOVE",".01","FLAG_ERRORS","NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
     ReplaceFields("length_temp",{'WidthFull':'SHAPE@LENGTH'})
     # Join clipped transects with full barrier lines and transfer width value
-    arcpy.JoinField_management(out_fc, transUIDfield, "length_temp", transUIDfield, "WidthFull")
+    arcpy.JoinField_management(clipped_trans, transUIDfield, "length_temp", transUIDfield, "WidthFull")
 
     # Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
-    arcpy.MultipartToSinglepart_management(out_fc,'singlepart_temp')
+    arcpy.MultipartToSinglepart_management(clipped_trans,'singlepart_temp')
     ReplaceFields("singlepart_temp",{'WidthPart':'SHAPE@LENGTH'})
     arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
-    arcpy.JoinField_management(out_fc,transUIDfield,"singlepart_temp",transUIDfield,"WidthPart")
+    arcpy.JoinField_management(clipped_trans,transUIDfield,"singlepart_temp",transUIDfield,"WidthPart")
     # Add fields to original file
     joinfields = ["WidthFull","WidthLand","WidthPart"]
     arcpy.DeleteField_management(in_trans, joinfields) # in case of reprocessing
-    arcpy.JoinField_management(in_trans,transUIDfield,out_fc,transUIDfield,joinfields)
+    arcpy.JoinField_management(in_trans,transUIDfield,clipped_trans,transUIDfield,joinfields)
     # Time report
     endPart4 = time.clock()
     duration = endPart4 - startPart4
     hours, remainder = divmod(duration, 3600)
     minutes, seconds = divmod(remainder, 60)
     print "Barrier island widths completed in %dh:%dm:%fs" % (hours, minutes, seconds)
-    return out_fc
+    return clipped_trans
 
 def TransectsToContinuousRaster(in_trans, out_rst, cellsize_rst, transUIDfield='sort_ID'):
     # Create raster of sort_ID - each cell value indicates its nearest transect
+    # in_trans = extTrans_tidy (only sort_ID field is necessary)
+    # out_rst = {}{}_rstTransID
     trans_rst = 'rst_transID_temp'
     arcpy.PolylineToRaster_conversion(in_trans, transUIDfield, trans_rst, cellsize=5)
     outEucAll = arcpy.sa.EucAllocation(in_trans, maximum_distance=50, cell_size=cellsize_rst, source_field=transUIDfield)
@@ -978,14 +982,29 @@ def TransectsToContinuousRaster(in_trans, out_rst, cellsize_rst, transUIDfield='
     return out_rst
 
 def JoinFCtoRaster(in_fc, in_rst, out_rst, transUIDfield='sort_ID'):
+    # could have separate input FCs for the 1) the geometry and 2) the values. Those would be 1) extTrans_tidy and 2) extendedTransects(_fill). This would remove the need to replace null values in extTrans_tidy
     if not arcpy.Exists(in_rst):
-        in_rst = TransectsToContinuousRaster(extTrans_tidy, in_rst, cellsize_rst, transUIDfield)
+        in_rst = TransectsToContinuousRaster(in_fc, in_rst, cellsize_rst, transUIDfield)
     arcpy.MakeTableView_management(in_fc, 'tableview')
     # I tried running ReplaceValueInFC here, but it didn't work - no change in output
     arcpy.MakeRasterLayer_management(in_rst, 'rst_lyr')
     arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', transUIDfield)
     arcpy.CopyRaster_management('rst_lyr', out_rst)
     return out_rst
+
+def FCtoRaster(in_fc, out_rst, transUIDfield, home, in_rst='rst_transID', fill=False):
+    if fill:
+        fill_fc = in_fc+'_fill'
+        arcpy.FeatureClassToFeatureClass_conversion(in_fc, home, fill_fc)
+        fields=[]
+        for f in arcpy.ListFields(fill_fc):
+            if f.type!='String':
+                fields.append(f.name)
+        ReplaceValueInFC(fill_fc, None, fill, fields)
+    # Join all fields to raster
+    JoinFCtoRaster(fill_fc, in_rst, out_rst,  transUIDfield) # will create raster of transect ID if not already present.
+    print('Raster {} created from {}.'.format(out_rst, in_fc))
+    return fill_fc, out_rst
 
 def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtrans='trans_clipped2island'):
     """
