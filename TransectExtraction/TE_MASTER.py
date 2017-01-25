@@ -15,8 +15,7 @@ Notes:
 import arcpy, time, os, pythonaddins, sys, math
 sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
-#from TE_config_Forsythe2014 import *
-from TE_config_Forsythe2014 import *
+from TE_config_Forsythe2012 import *
 
 start = time.clock()
 
@@ -24,7 +23,8 @@ start = time.clock()
 Pre-processing
 """
 # Check presence of default files in gdb
-extendedTrans = SetInputFCname(home, 'extendedTrans', extendedTrans)
+e_trans = SetInputFCname(home, 'extendedTrans', extendedTrans)
+t_trans = SetInputFCname(home, 'extTrans_tidy', extTrans_tidy)
 i_name = SetInputFCname(home, 'inlets delineated (inletLines)', inletLines, system_ext=False)
 armorLines = SetInputFCname(home, 'beach armoring lines (armorLines)', armorLines)
 bb_name = SetInputFCname(home, 'barrier island polygon (barrierBoundary)', barrierBoundary, False)
@@ -70,14 +70,29 @@ else:
     shoreline = new_shore
 
 # TRANSECTS - extendedTrans
+# Copy transects from archive directory
+if not e_trans:
+    try:
+        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source':orig_tidytrans})
+        arcpy.FeatureClassToFeatureClass_conversion(orig_tidytrans, home, extTrans_tidy, field_mapping=fmap)
+    except:
+        tt_orig = False
+if not t_trans:
+    try:
+        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source':orig_extTrans})
+        arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, home, extendedTrans, field_mapping=fmap)
+    except:
+        et_orig = False
+
+# Create extendedTrans, LT transects with gaps filled and lines extended
 # see TE_preprocessing.py
-if not arcpy.Exists(extendedTrans):
+if not e_trans:
     trans_presort = 'trans_presort_temp'
     CopyAndWipeFC(trans_orig, trans_presort)
     pythonaddins.MessageBox("Now we'll stop so you can copy existing groups of transects to fill in the gaps. If possible avoid overlapping transects", "Created {}. Proceed with manual processing.".format(trans_presort), 0)
     exit()
 # Delete any NAT transects in the new transects layer
-if not arcpy.Exists(extendedTrans):
+if not e_trans:
     arcpy.SelectLayerByLocation_management(trans_presort, "ARE_IDENTICAL_TO", trans_orig) # or "SHARE_A_LINE_SEGMENT_WITH"
     if int(arcpy.GetCount_management(trans_presort)[0]) > 0: # if there are old transects in new transects, delete them
         arcpy.DeleteFeatures_management(trans_presort)
@@ -86,18 +101,18 @@ if not arcpy.Exists(extendedTrans):
     arcpy.Append_management(trans_orig, trans_presort)
     pythonaddins.MessageBox("Now we'll stop so you can check that the transects are ready to be sorted either from the bottom up or top down. ", "Stop for manual processing.".format(trans_presort), 0)
     exit()
-if not arcpy.Exists(extendedTrans):
+if not e_trans:
     # Sort
     trans_sort_1 = 'trans_sort_temp'
-    trans_sort_ext = 'extTrans_temp'
+    extTrans_sort_ext = 'extTrans_temp'
     trans_sort_1, count1 = SpatialSort(trans_presort,trans_sort_1,"LR",reverse_order=False,sortfield="sort_ID")
     # Extend
-    ExtendLine(trans_sort_1,trans_sort_ext,extendlength,proj_code)
-    if len(arcpy.ListFields(trans_sort_ext,'OBJECTID*')) == 2:
+    ExtendLine(trans_sort_1, extTrans_sort_ext,extendlength,proj_code)
+    if len(arcpy.ListFields(extTrans_sort_ext,'OBJECTID*')) == 2:
         ReplaceFields(trans_sort_ext,{'OBJECTID':'OID@'})
     # Make sure transUIDfield counts from 1
     # Work with duplicate of original transects to preserve them - version for modification has the year added to the transect filename
-    arcpy.Sort_management(trans_sort_ext,extendedTrans,transUIDfield)
+    arcpy.Sort_management(extTrans_sort_ext,extendedTrans,transUIDfield)
     with arcpy.da.SearchCursor(extendedTrans, transUIDfield) as cursor:
         row = next(cursor)
     # If transUIDfield does not count from 1, adjust the values
@@ -109,9 +124,10 @@ if not arcpy.Exists(extendedTrans):
                 cursor.updateRow(row)
 
 # TRANSECTS - extTrans_tidy
-if not arcpy.Exists(extTrans_tidy):
+if not t_trans:
     print("Manual work seems necessary to remove transect overlap")
     exit()
+if not t_trans:
     # Select the boundary lines between groups of overlapping transects
     overlapTrans_lines = 'overlapTrans_lines_temp'
     trans_x = 'overlap_points_temp'
@@ -121,7 +137,7 @@ if not arcpy.Exists(extTrans_tidy):
     arcpy.SplitLineAtPoint_management(extendedTransects,trans_x,extTrans_tidy)
     arcpy.SelectLayerByLocation_management(extTrans_tidy, "INTERSECT", shoreline, '10 METERS',invert_spatial_relationship='INVERT')
     exit()
-if not arcpy.Exists(extTrans_tidy):
+if not t_trans:
     arcpy.DeleteFeatures_management(extTrans_tidy)
     arcpy.CopyFeatures_management(extTrans_tidy, extTrans_tidy_archive)
 

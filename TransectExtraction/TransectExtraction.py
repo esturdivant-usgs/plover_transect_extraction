@@ -566,28 +566,27 @@ def ShorelinePtsToTransects(extendedTransects, inPtsDict, transUIDfield, proj_co
     arcpy.JoinField_management(extendedTransects,transUIDfield,shl2trans,transUIDfield,shlfields)
     return extendedTransects
 
-def ArmorLineToTransects(out_fc, armorLines, transUIDfield, proj_code, tempfile, elevGrid_5m):
+def ArmorLineToTransects(in_trans, armorLines, transUIDfield, proj_code, tempfile, elevGrid_5m):
     armz='Arm_z'
     arm2trans="arm2trans"
     armorfields = ['Arm_Lon','Arm_Lat','Arm_x','Arm_y','Arm_z']
     if not arcpy.Exists(arm2trans):
         # Create armor points with XY and LatLon fields
         DeleteExtraFields(armorLines)
-        arcpy.Intersect_analysis((armorLines,out_fc), tempfile, output_type='POINT')
+        arcpy.Intersect_analysis((armorLines,in_trans), tempfile, output_type='POINT')
         AddXYAttributes(tempfile,arm2trans,'Arm',proj_code)
         AddNewFields(arm2trans,armz,fieldtype="DOUBLE")
         # Get elevation at points
-        if arcpy.Exists(elevGrid_5m):
-            arcpy.sa.ExtractMultiValuesToPoints(arm2trans,[[elevGrid_5m, 'z_tmp']]) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
-            #arcpy.AlterField_management(arm2trans,elevGrid_5m,armz,armz)
-            with arcpy.da.UpdateCursor(arm2trans,[armz,'z_tmp']) as cursor:
-                for row in cursor:
-                    cursor.updateRow([row[1], row[1]])
+        print('Getting elevation of beach armoring by extracting elevation values to arm2trans points.')
+        arcpy.sa.ExtractMultiValuesToPoints(arm2trans,[[elevGrid_5m, 'z_tmp']]) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
+        with arcpy.da.UpdateCursor(arm2trans,[armz,'z_tmp']) as cursor:
+            for row in cursor:
+                cursor.updateRow([row[1], row[1]])
     # Join
-    arcpy.DeleteField_management(out_fc, armorfields) #In case of reprocessing
-    arcpy.JoinField_management(out_fc, transUIDfield, arm2trans, transUIDfield, armorfields)
+    arcpy.DeleteField_management(in_trans, armorfields) #In case of reprocessing
+    arcpy.JoinField_management(in_trans, transUIDfield, arm2trans, transUIDfield, armorfields)
     # How do I know which point will be encountered first? - don't want those in back to take the place of
-    return out_fc
+    return in_trans
 
 def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m):
     # Add Feature Positions To Transects, XYZ from DH, DL, & Arm points within 10m of transects
@@ -597,8 +596,10 @@ def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, armorLines, tran
     if not in_trans == out_fc:
         arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
     # Shoreline
+    print('Getting position (lat, lon, x, y, Bslope) of MHW for each transect...')
     ShorelinePtsToTransects(out_fc, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance)
     # Armor
+    print('Getting position (lat, lon, x, y, z) of beach armoring for each transect...')
     ArmorLineToTransects(out_fc, armorLines, transUIDfield, proj_code, tempfile, elevGrid_5m)
     # Dunes
     dh2trans = "dh2trans"
