@@ -6,16 +6,15 @@ email: esturdivant@usgs.gov; bgutierrez@usgs.gov; sawyer.stippa@gmail.com
 Date last modified: 11/22/2016
 '''
 import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(os.path.dirname(os.path.realpath(__file__)))
-#sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
+sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
 
 ############ Inputs #########################
-SiteYear_strings = {'site': 'ParkerRiver',
-                    'year': '2014',
-                    'region': 'Massachusetts',
-                    'MHW':1.22,
-                    'MLW':-1.37, # average of approximate MLW on Chesapeake Bay side (-0.47) and Atlantic side (-0.58)
+SiteYear_strings = {'site': 'Forsythe',
+                    'year': '2010',
+                    'region': 'NewJersey',
+                    'MHW':0.43,
+                    'MLW':-0.61,
                     'MTL':None}
 
 # arcpy.GetParameterAsText(0)
@@ -43,7 +42,8 @@ dMHW = -MHW                         # Beach height adjustment
 oMLW = MHW-MLW                      # MLW offset from MHW # Beach height adjustment (relative to MHW)
 SiteYear_strings['MTL'] = MTL = (MHW+MLW)/2
 
-trans_orig = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
+orig_extTrans = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
+orig_tidytrans = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 ShorelinePts = '{site}{year}_SLpts'.format(**SiteYear_strings)
 dhPts = '{site}{year}_DHpts'.format(**SiteYear_strings)				# Dune crest
@@ -68,7 +68,7 @@ CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)               
 shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
 slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
 
-extTrans_tidy = "{site}{year}_tidytrans".format(**SiteYear_strings)
+extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
 transects_part2 = os.path.join(home,'trans_part2')
 transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
 transPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
@@ -121,34 +121,3 @@ transPt_fields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
     'DistSegDH', 'DistSegDL', 'DistSegArm',
     'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
     'MAX_ptZmhw', 'MEAN_ptZmhw']
-
-## Just PR
-transect_fields_v1 = ['SL_Lat', 'SL_Lon', 'SL_easting', 'SL_northing', 'Bslope',
-    'DL_Lat', 'DL_Lon', 'DL_easting', 'DL_northing', 'DL_z', 'DL_zMHW',
-    'DH_Lat', 'DH_Lon', 'DH_easting', 'DH_northing', 'DH_z', 'DH_zMHW',
-    'Arm_Lat', 'Arm_Lon', 'Arm_easting', 'Arm_northing', 'Arm_z', 'Arm_zMHW',
-    'DistDH', 'DistDL', 'DistArm']
-transect_fields_v2 = ['MLW_easting','MLW_northing',
-  'beach_h_MHW','beachWidth_MHW',
-  'beach_h_MLW','beachWidth_MLW',
-  'CP_easting','CP_northing','CP_zMHW']
-
-
-missing_Tfields = []
-for fname in transect_fields:
-    if not fieldExists(extendedTransects, fname):
-        missing_Tfields.append(fname)
-missing_Tfields = fieldsAbsent(extendedTransects, transect_fields)
-
-for i in range(len(transect_fields_v1)):
-    origfname = transect_fields_v1[i]
-    newfname = transect_fields_part1[i]
-    if newfname in missing_Tfields:
-        print("{} -> {}".format(origfname, newfname))
-        arcpy.AlterField_management(extendedTransects, origfname, newfname)
-
-arcpy.DeleteField_management(extendedTransects, transect_fields_v2)
-
-DeleteExtraFields(extTrans_tidy, transect_fields_part0+transect_fields_part1+transect_fields_part3+transect_fields_part4)
-missing_Tfields = fieldsAbsent(extTrans_tidy, transect_fields)
-arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,missing_Tfields)

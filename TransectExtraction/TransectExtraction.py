@@ -50,6 +50,21 @@ def CheckValues(inFeatureClass,fieldName,expectedRange):
             cursor.updateRow(row)
     return lowrows,highrows
 
+def fieldsAbsent(in_fc, fieldnames):
+    try:
+        fieldList = arcpy.ListFields(os.path.join(arcpy.env.workspace,in_fc))
+    except:
+        fieldList = arcpy.ListFields(in_fc)
+    fnamelist = [f.name.lower() for f in fieldList]
+    mfields = []
+    for fn in fieldnames:
+        if not fn.lower() in fnamelist:
+            mfields.append(fn)
+    if not len(mfields):
+        return False
+    else:
+        return mfields
+
 def fieldExists(inFeatureClass, inFieldName):
     try:
         fieldList = arcpy.ListFields(os.path.join(arcpy.env.workspace,inFeatureClass))
@@ -91,12 +106,12 @@ def AddNewFields(fc,fieldlist,fieldtype="DOUBLE", verbose=True):
         print("fieldlist accepts string, list, or tuple of field names. {} type not accepted.".format(type(fieldlist)))
     return fc
 
-def DeleteExtraFields(inTable,keepfields=[]):
+def DeleteExtraFields(inTable, keepfields=[]):
     fldsToDelete = [x.name for x in arcpy.ListFields(inTable) if not x.required] # list all fields that are not required in the FC (e.g. OID@)
     if keepfields:
-        [fldsToDelete.remove(fldToKeep) for fldToKeep in keepfields] # remove keepfields from fldsToDelete
+        [fldsToDelete.remove(f) for f in keepfields if f in fldsToDelete] # remove keepfields from fldsToDelete
     if len(fldsToDelete):
-        arcpy.DeleteField_management(inTable,fldsToDelete)
+        arcpy.DeleteField_management(inTable, fldsToDelete)
     return inTable
 
 def DeleteTempFiles(wildcard='*_temp'):
@@ -106,6 +121,7 @@ def DeleteTempFiles(wildcard='*_temp'):
     return templist
 
 def RemoveLayerFromMXD(lyrname):
+    # accepts wildcards
     try:
         mxd = arcpy.mapping.MapDocument('CURRENT')
         for df in arcpy.mapping.ListDataFrames(mxd):
@@ -122,10 +138,9 @@ def RemoveLayerFromMXD(lyrname):
 def newcoord(coords, dist):
     # Computes new coordinates x3,y3 at a specified distance along the prolongation of the line from x1,y1 to x2,y2
     (x1,y1),(x2,y2) = coords
-    dx = x2 - x1
-    dy = y2 - y1
-    linelen = hypot(dx, dy)
-
+    dx = x2 - x1 # change in x
+    dy = y2 - y1 # change in y
+    linelen = hypot(dx, dy) # distance between xy1 and xy2
     x3 = x2 + dx/linelen * dist
     y3 = y2 + dy/linelen * dist
     return x3, y3, linelen
@@ -195,7 +210,7 @@ def ReplaceValueInFC(fc,oldvalue=-99999,newvalue=None, fields=[]):
 
 def ReplaceValueInFC_v1(fc,fields=[],oldvalue=-99999,newvalue=None):
     # Replace oldvalue with newvalue in fields in fc
-    if len(fields) < 1:
+    if not len(fields):
         fs = arcpy.ListFields(fc)
         for f in fs:
             fields.append(f.name)
@@ -215,7 +230,7 @@ def ReProject(fc,newfc,proj_code=26918):
     return newfc
 
 def DeleteFeaturesByValue(fc,fields=[], deletevalue=-99999):
-    if len(fields) < 1:
+    if not len(fields):
         fs = arcpy.ListFields(fc)
         for f in fs:
             fields.append(f.name)
@@ -374,16 +389,14 @@ def CreateShoreBetweenInlets(shore_delineator,inletLines,out_line,shoreline_pts,
         arcpy.ExtendLine_edit(shore_delineator,'500 Meters')
     # Eliminate extra lines, e.g. bayside, based on presence of SHLpts
     arcpy.FeatureToLine_management([shore_delineator, inletLines], 'split_temp')
-    """
-    # alternative (more efficient?):
-    # arcpy.SelectLayerByLocation_management('split_temp', "INTERSECT", ShorelinePts, '1 METERS', invert_spatial_relationship="INVERT")
-    # arcpy.DeleteFeatures_management('split_temp')
-    """
     arcpy.SelectLayerByLocation_management("split_temp","INTERSECT", shoreline_pts,'1 METERS')
     # count intersecting inlet lines
-    arcpy.SpatialJoin_analysis('split_temp',inletLines,out_line,"JOIN_ONE_TO_ONE")
-    ReplaceFields(shoreline_pts,{'ORIG_FID':'OID@'},'SHORT')
-    ReplaceFields(out_line,{'ORIG_FID':'OID@'},'SHORT')
+    arcpy.SpatialJoin_analysis('split_temp',inletLines,"join_temp","JOIN_ONE_TO_ONE")
+    #arcpy.SelectLayerByAttribute_management("join_temp", "REMOVE_FROM_SELECTION", '"FID_{}" > -1'.format(inletLines)) # invalid SQL expression
+    print('CHECK THIS PROCESS. Added Dissolve operation to CreateShore... and so far it has not been tested.')
+    arcpy.Dissolve_management("join_temp", out_line, [["FID_{}".format(shore_delineator)]], [['Join_Count','SUM']])
+    #ReplaceFields(shoreline_pts,{'ORIG_FID':'OID@'},'SHORT')
+    #ReplaceFields(out_line,{'ORIG_FID':'OID@'},'SHORT')
     return out_line
 
 def CreateShoreBetweenInlets_v1(SLdelineator,inletLines,out_line,proj_code=26918):
@@ -661,7 +674,7 @@ def FindNearestPointWithZvalue(row,cursorfields,distance_fields=['DistDH','DistD
     # return the prefix ('DL', 'DH', or 'Arm') of point with shortest distance to MHW (exclude DH if higher than maxDH)
     cps = FindFieldWithMinValue(row,cursorfields,distance_fields)
     cp=None
-    if len(cps)>0:
+    if len(cps):
         i = 0
         while i < len(cps):
             cp = cps[i][4:]
@@ -705,30 +718,32 @@ def CreatePointsFromCP(baseName,CPpts,utmSR):
 def CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y):
     # Calculate beach width based on dune and shoreline coordinates (meters)
     try:
-        # 6 Calculate beach width = Euclidean distance from dune to MLW
+        # 6 Calculate beach width = Euclidean distance from dune to MHW
         bw_mhw = hypot(sl_x - d_x, sl_y - d_y)
-        output = bw_mhw
     except TypeError:
-        output = None
-    return output
-"""
-def CalcBeachWidth_MLW(oMLW,d_x,d_y,b_slope,sl_x,sl_y):
+        bw_mhw = None
+    return bw_mhw
+
+def CalcBeachWidth_MLW(oMLW, duneXY, b_slope, shoreXY):
     # Calculate beach width based on dune and shoreline projected coordinates (meters), beach slope, and MLW adjustment value
+    d_x, d_y = duneXY
+    sl_x, sl_y = shoreXY
     try:
         # Calculate Euclidean distance between MHW and MLW based on slope and MLW adjustment
         MLWdist = abs(oMLW/b_slope) # 1/17: ADDED abs()
+        #print('MLWdist - Distance between MHW and MLW: {}'.format(MLWdist))
         # Find coordinates of MLW based on transect azimuth and MLWdist
-        mlw_x, mlw_y, bw_mlw = newcoord([(d_x,d_y), (sl_x,sl_y)], abs(oMLW/b_slope))
-
+        mlw_x, mlw_y, bw_mhw = newcoord([duneXY, shoreXY], MLWdist)
+        #print('bw_mhw - Distance between dune and MHW: {}'.format(bw_mhw))
         # 6 Calculate beach width = Euclidean distance from dune to MLW
-        #bw_mlw = hypot(mlw_x - d_x, mlw_y - d_y)
-
+        bw_mlw = hypot(mlw_x - d_x, mlw_y - d_y)
+        #print('bw_mlw - Distance between dune and MLW: {}'.format(bw_mlw))
         output = [mlw_x, mlw_y, bw_mlw]
     except TypeError:
         output = [None, None, None]
     return output
-"""
-def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, create_points=True, skip_field_check=False):
+
+def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, MLWpts, CPpts, create_points=True, skip_field_check=False):
     # Calculate distances (beach height, beach width, beach slope, max elevation)
     # Requires: transects with shoreline and dune position information
     startPart2 = time.clock()
@@ -798,11 +813,8 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, create_po
                 sl_x = row[flist.index('SL_x')]
                 sl_y = row[flist.index('SL_y')]
                 #bw_mhw = CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y)
-                try:
-                    mlw_x, mlw_y, bw_mlw = newcoord([(d_x,d_y), (sl_x,sl_y)], abs(oMLW/b_slope))
-                except TypeError:
-                    mlw_x, mlw_y, bw_mlw = [None, None, None]
-                    pass
+                #bw_mlw = bw_mhw + abs(oMLW/b_slope)
+                mlw_x, mlw_y, bw_mlw = CalcBeachWidth_MLW(oMLW, (d_x, d_y), b_slope, (sl_x, sl_y))
                 # update Row values
                 row[flist.index('MLW_x')] = mlw_x
                 row[flist.index('MLW_y')] = mlw_y
@@ -821,13 +833,14 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, create_po
                 pass
             cursor.updateRow(row)
     # Report
-    print("Beach width (bw_mhw) could not be calculated for {} out of {} transects.".format(errorct,transectct))
+    print("Top of beach could not be located for {} out of {} transects.".format(errorct,transectct))
     # Create MLW and CP points for error checking
     if create_points:
         arcpy.MakeXYEventLayer_management(out_fc,'MLW_x','MLW_y',MLWpts+'_lyr',utmSR)
         arcpy.CopyFeatures_management(MLWpts+'_lyr',MLWpts)
-        arcpy.MakeXYEventLayer_management(out_fc,'CP_x','CP_y',CPpts+'_lyr',utmSR)
-        arcpy.CopyFeatures_management(CPpts+'_lyr',CPpts)
+        if not arcpy.Exists(CPpts):
+            arcpy.MakeXYEventLayer_management(out_fc,'CP_x','CP_y',CPpts+'_lyr',utmSR)
+            arcpy.CopyFeatures_management(CPpts+'_lyr',CPpts)
     # Time report
     endPart2 = time.clock()
     duration = endPart2 - startPart2
@@ -850,22 +863,26 @@ def dist2inlet(in_line, transUIDfield, xpts, coord_priority = "LOWER_LEFT"):
 def Dist2Inlet(transects, in_line, transUIDfield='sort_ID', xpts='xpts_temp', two_directions = True):
     # Measure distance from inlet to each transect in both directions
     startPart3 = time.clock()
-    if not arcpy.Exists(xpts):
+    if not arcpy.Exists(xpts): # Use shl2trans instead?
         arcpy.Intersect_analysis([transects,in_line],xpts,'ALL','1 METERS','POINT')
+    else:
+        arcpy.DeleteField_management(xpts, ['MEAS','MEAS_1'])
     # Convert shoreline to routes between where each transect crosses the shoreline
     print('Measuring distance to each transect from lower left corner')
     dist2inlet(in_line, transUIDfield, xpts, coord_priority = "LOWER_LEFT")
+    # Perform dist2inlet calculations from other direction on shoreline that is bounded by an inlet on both sides.
     if fieldExists(in_line, 'Join_Count'):
         try:
-            arcpy.MakeFeatureLayer_management(in_line,in_line+'_lyr','"Join_Count">1') # Only use sections that intersect two inlet lines
+            arcpy.MakeFeatureLayer_management(in_line,in_line+'_lyr','"SUM_Join_Count">1') # Only use sections that intersect two inlet lines
+            in_line = in_line+'_lyr'
         except:
             two_directions = False
             pass
     else:
-        print('Field "Join_Count" does not exist in {}. We will assume that each shoreline line is bounded by an inlet.'.format(in_line))
+        print('Field "SUM_Join_Count" does not exist in {}. We will assume that each shoreline line is bounded by an inlet.'.format(in_line))
     if two_directions:
         print('Measuring distance from other corner (upper right)')
-        dist2inlet(in_line+'_lyr', transUIDfield, xpts, coord_priority = "UPPER_RIGHT")
+        dist2inlet(in_line, transUIDfield, xpts, coord_priority = "UPPER_RIGHT")
         # Save lowest *non-Null* distance value as Dist2Inlet
         with arcpy.da.UpdateCursor(xpts, ('MEAS', 'MEAS_1')) as cursor:
             for row in cursor:
@@ -876,7 +893,7 @@ def Dist2Inlet(transects, in_line, transUIDfield='sort_ID', xpts='xpts_temp', tw
                 cursor.updateRow(row)
     # Create Dist2Inlet field in xpts_temp
     try:
-        arcpy.AlterField_management(xpts, 'MEAS', 'Dist2Inlet')
+        arcpy.AlterField_management(xpts, 'MEAS', 'Dist2Inlet') # Fails when Dist2Inlet field already exists.
     except: # If we can't simply alter the field name, add a Dist2Inlet field and populate with values from MEAS. MEAS will be deleted later.
         arcpy.AddField_management(xpts,'Dist2Inlet','DOUBLE')
         with arcpy.da.UpdateCursor(xpts,['Dist2Inlet','MEAS']) as cursor:
@@ -987,7 +1004,7 @@ def FCtoRaster(in_fc, in_ID, out_rst, IDfield, home, fill=False):
     print('Raster {} created from {}.'.format(out_rst, in_fc))
     return fill_fc, out_rst
 
-def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtrans='trans_clipped2island'):
+def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtrans='tidytrans_clipped2island'):
     """
     # Split transects into segments
     """

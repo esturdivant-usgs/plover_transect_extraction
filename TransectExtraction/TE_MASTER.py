@@ -15,7 +15,7 @@ Notes:
 import arcpy, time, os, pythonaddins, sys, math
 sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
-from TE_config_Forsythe2012 import *
+from TE_config_Forsythe2010 import *
 
 start = time.clock()
 
@@ -23,16 +23,17 @@ start = time.clock()
 Pre-processing
 """
 # Check presence of default files in gdb
-e_trans = SetInputFCname(home, 'extendedTrans', extendedTrans)
-t_trans = SetInputFCname(home, 'extTrans_tidy', extTrans_tidy)
+e_trans = SetInputFCname(home, 'extendedTrans', extendedTrans, system_ext=False)
+t_trans = SetInputFCname(home, 'extTrans_tidy', extTrans_tidy, system_ext=False)
 i_name = SetInputFCname(home, 'inlets delineated (inletLines)', inletLines, system_ext=False)
+dhPts = SetInputFCname(home, 'dune crest points (dhPts)', dhPts)
+dlPts = SetInputFCname(home, 'dune toe points (dlPts)', dlPts)
+ShorelinePts = SetInputFCname(home, 'shoreline points (ShorelinePts)', ShorelinePts)
 armorLines = SetInputFCname(home, 'beach armoring lines (armorLines)', armorLines)
 bb_name = SetInputFCname(home, 'barrier island polygon (barrierBoundary)', barrierBoundary, False)
 new_shore = SetInputFCname(home, 'shoreline between inlets', shoreline, False)
 elevGrid_5m = SetInputFCname(home, 'DEM raster at 5m res (elevGrid_5m)', elevGrid_5m, False)
-dhPts = SetInputFCname(home, 'dune crest points (dhPts)', dhPts)
-dlPts = SetInputFCname(home, 'dune toe points (dlPts)', dlPts)
-ShorelinePts = SetInputFCname(home, 'shoreline points (ShorelinePts)', ShorelinePts)
+
 
 # DUNE POINTS
 # Replace fill values with Null
@@ -73,14 +74,14 @@ else:
 # Copy transects from archive directory
 if not e_trans:
     try:
-        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source':orig_tidytrans})
-        arcpy.FeatureClassToFeatureClass_conversion(orig_tidytrans, home, extTrans_tidy, field_mapping=fmap)
+        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source':orig_extTrans})
+        arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, home, extendedTrans, field_mapping=fmap)
     except:
         tt_orig = False
 if not t_trans:
     try:
-        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source':orig_extTrans})
-        arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, home, extendedTrans, field_mapping=fmap)
+        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source':orig_tidytrans})
+        arcpy.FeatureClassToFeatureClass_conversion(orig_tidytrans, home, extTrans_tidy, field_mapping=fmap)
     except:
         et_orig = False
 
@@ -163,7 +164,7 @@ Calculate distances (beach height, beach width, beach slope, max elevation)
 Requires: transects with shoreline and dune position information
 '''
 print("Starting part 2 - Calculate beach geometry - Should be quick!")
-CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, oMLW, create_points=False, skip_field_check=True)
+CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, oMLW, MLWpts, CPpts, create_points=False, skip_field_check=True)
 
 # check that I am using the correct barrierBoundary. "_edited" also exists and might be better.
 
@@ -171,19 +172,20 @@ CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW,
 Dist2Inlet: Calc dist from inlets
 # Requires transects and shoreline
 '''
+DeleteTempFiles()
+#RemoveLayerFromMXD('*_temp')
 print "Starting Part 3 - Distance to Inlet"
 
 # Run Dist2Inlet
-Dist2Inlet(extendedTransects, shoreline, transUIDfield, xpts='xpts_temp')
+Dist2Inlet(extendedTransects, shoreline, transUIDfield, xpts='SHL2trans')
 
-DeleteTempFiles()
 
 '''___________________PART 4____________________________________________________
 Clip transects, get barrier widths
 Requires: extended transects, boundary polygon
 '''
 print "Starting Part 4 - Get barrier widths and output transects"
-GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, transUIDfield='sort_ID')
+clipped_trans = GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, transUIDfield='sort_ID')
 
 DeleteTempFiles()
 
@@ -194,8 +196,10 @@ Requires: extended transects, extTrans_tidy
 
 # OUTPUT: extTrans_tidy fully populated
 # Join the new fields from extendedTransects to extTrans_tidy
-arcpy.DeleteField_management(extTrans_tidy, transect_fields) # in case of reprocessing
-arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,transect_fields)
+field = ['bw_mlw']
+arcpy.DeleteField_management(extTrans_tidy, field) # in case of reprocessing
+
+arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,field)
 print("Final population of {} complete. Now creating a raster version as {}. ".format(extTrans_tidy, rst_transPopulated))
 
 # OUTPUT: raster version of populated transects (with fill values)
@@ -209,6 +213,7 @@ DeleteTempFiles()
 Create Transect Segment points and sample data
 Requires: clipped transects with shoreline fields
 '''
+DeleteTempFiles()
 print 'Starting Part 5'
 print 'Expect a 3 to 15 minute wait'
 startPart5 = time.clock()
@@ -218,9 +223,10 @@ transPts_presort = SplitTransectsToPoints(extTrans_tidy, 'transPts_presort', bar
 
 # Calculate distance of point from shoreline and dunes (Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
 ReplaceFields(transPts_presort,{'seg_x':'SHAPE@X','seg_y':'SHAPE@Y'}) # Add xy for each segment center point
-# extTrans_tidy must have SL_easting, SL_northing, and WidthPart
+# clipped_trans must have transdistfields
 distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y', 'DistSegDH', 'DistSegDL', 'DistSegArm']
 transdistfields = ['DistDH', 'DistDL', 'DistArm', 'SL_x', 'SL_y', 'WidthPart']
+
 AddNewFields(transPts_presort, distfields)
 with arcpy.da.UpdateCursor(transPts_presort, "*") as cursor:
     for row in cursor:

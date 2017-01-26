@@ -65,7 +65,7 @@ oceanside_auto = '{site}{year}_MHWfromSLPs'.format(**SiteYear_strings)
 shl2trans = '{site}{year}_SHL2trans'.format(**SiteYear_strings)							# beach slope from lidar within 10m of transect
 MLWpts = '{site}{year}_MLW2trans'.format(**SiteYear_strings)                     # MLW points calculated during Beach Width calculation
 CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)                     # Points used as upper beach edge for Beach Width and height
-shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
+shoreline = '{site}{year}_ShoreBetweenInlets_dissolved'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
 slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
 
 extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
