@@ -154,7 +154,7 @@ Add Feature Positions To Transects, XYZ from DH, DL, & Arm points within 10m of 
 Requires DH, DL, and SHL points, NA transects
 '''
 
-AddFeaturePositionsToTransects(extendedTrans, extendedTransects, {'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts, 'shoreline':shoreline}, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)
+AddFeaturePositionsToTransects(in_trans=extendedTrans, out_fc=extendedTransects, inPtsDict={'ShorelinePts':ShorelinePts, 'dhPts':dhPts, 'dlPts':dlPts, 'shoreline':shoreline, 'armorLines': armorLines}, IDfield=transUIDfield, proj_code=proj_code, disttolerance=pt2trans_disttolerance, home=home, elevGrid_5m=elevGrid_5m)
 
 DeleteTempFiles()
 
@@ -163,8 +163,9 @@ Calculate distances (beach height, beach width, beach slope, max elevation)
 Requires: transects with shoreline and dune position information
 '''
 print("Starting part 2 - Calculate beach geometry - Should be quick!")
-CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, create_points=False, skip_field_check=True)
+CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, oMLW, create_points=False, skip_field_check=True)
 
+# check that I am using the correct barrierBoundary. "_edited" also exists and might be better.
 
 '''_________________PART 3______________________________________________________
 Dist2Inlet: Calc dist from inlets
@@ -332,34 +333,37 @@ with arcpy.da.UpdateCursor(out_stats,['*']) as cursor:
 arcpy.JoinField_management(transPts,transUIDfield,out_stats,transUIDfield,['MAX_ptZmhw','MEAN_ptZmhw']) # very slow ~1 hr for Monomoy
 arcpy.JoinField_management(extendedTransects,transUIDfield,out_stats,transUIDfield,['MAX_ptZmhw','MEAN_ptZmhw'])
 
-"""
-Save final files
-"""
+'''______________________PART 7_________________________________________________
+Save final files: extendedTransects -> extendedTransects_null, extendedTransects_fill
+'''
 missing_Tfields = []
 for fname in transect_fields:
     if not fieldExists(extendedTransects, fname):
         print("Field '{}' not present in transects file '{}'.".format(fname, extendedTransects))
         missing_Tfields.append(fname)
 # Save final transects with fill values
-extendedTransects_fill = extendedTrans+'_populated_fill'
-arcpy.FeatureClassToFeatureClass_conversion(extendedTransects, home, extendedTransects_fill)
-ReplaceValueInFC(extendedTransects_fill, None, fill)
-arcpy.FeatureClassToFeatureClass_conversion(extendedTransects_fill,out_dir,extendedTransects_fill+'.shp')
-arcpy.TableToTable_conversion(extendedTransects_fill, out_dir, extendedTransects_fill+'.csv')
+extendedTransects_fill, out_rst = FCtoRaster(extendedTransects, extTrans_tidy, rst_transPopulated+'_Zavg', transUIDfield, home, fill)
+# extendedTransects_fill = extendedTrans+'_populated_fill'
+# arcpy.FeatureClassToFeatureClass_conversion(extendedTransects, home, extendedTransects_fill)
+# ReplaceValueInFC(extendedTransects_fill, None, fill)
+# arcpy.FeatureClassToFeatureClass_conversion(extendedTransects_fill,out_dir,extendedTransects_fill+'.shp')
+# arcpy.TableToTable_conversion(extendedTransects_fill, out_dir, extendedTransects_fill+'.csv')
 #FIXME: must either use pre-created in_rst or change to accept different seed and join FCs (seed: extTrans_tidy, join: extendedTransects_fill)
 #JoinFCtoRaster(in_fc=extendedTransects_fill, in_rst=rst_transID, out_rst=rst_transPopulated+'_Zavg',  transUIDfield='sort_ID') # will create raster of transect ID if not already present.
 
+# Check that transPts have all fields from extendedTransects and join those that are missing.
 missing_fields = []
 for fname in transect_fields:
     if not fieldExists(transPts, fname):
         print("Field '{}' not present in 5m points file '{}'.".format(fname, transPts))
         missing_fields.append(fname)
 # Save final transect points before moving on to segmenting them
-arcpy.DeleteField_management(transPts, fieldlist) # in case of reprocessing
-arcpy.JoinField_management(transPts,transUIDfield, extendedTransects,transUIDfield,fieldlist)
+arcpy.DeleteField_management(transPts, missing_fields) # in case of reprocessing
+arcpy.JoinField_management(transPts, transUIDfield, extendedTransects, transUIDfield, missing_fields)
 
 # Save pts as feature class with Nulls (transSplitPts_final)
 arcpy.FeatureClassToFeatureClass_conversion(transPts,home,tranSplitPts_null)
+# Replace Null values with fills and save as FC, SHP, and CSV
 arcpy.FeatureClassToFeatureClass_conversion(transPts,home,tranSplitPts_fill)
 ReplaceValueInFC(tranSplitPts_fill,None, fill)
 arcpy.FeatureClassToFeatureClass_conversion(transPts,out_dir,tranSplitPts_shp+'.shp')
