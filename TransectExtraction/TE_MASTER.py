@@ -175,9 +175,7 @@ Requires DH, DL, and SHL points, NA transects
 --> elevGrid
 '''
 
-AddFeaturePositionsToTransects(in_trans=orig_extTrans, out_fc=extendedTransects, inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts, 'shoreline': shoreline, 'armorLines': armorLines}, IDfield=transUIDfield, proj_code=proj_code, disttolerance=pt2trans_disttolerance, home=home, elevGrid_5m=elevGrid_5m)
-
-DeleteTempFiles()
+AddFeaturePositionsToTransects(in_trans=extendedTrans, out_fc=extendedTransects, inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts, 'shoreline': shoreline, 'armorLines': armorLines}, IDfield=transUIDfield, proj_code=proj_code, disttolerance=pt2trans_disttolerance, home=home, elevGrid_5m=elevGrid_5m)
 
 '''___________________PART 2____________________________________________________
 Calculate distances (beach height, beach width, beach slope, max elevation)
@@ -185,8 +183,11 @@ Requires: transects with shoreline and dune position information
 *NON-SPATIAL*
 --> extendedTransects w/ position fields (p1)
 '''
+arcpy.env.workspace = home
+DeleteTempFiles()
 print("Starting part 2 - Calculate beach geometry - Should be quick!")
-CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, oMLW, MLWpts, CPpts, create_points=True, skip_field_check=False)
+CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, oMLW,
+                        MLWpts, CPpts, create_points=True, skip_field_check=False)
 
 '''_________________PART 3_____________________________________________________
 Dist2Inlet: Calc dist from inlets
@@ -195,11 +196,10 @@ Dist2Inlet: Calc dist from inlets
 --> extendedTransects
 --> shoreline w/ SUM_Join_Count field
 '''
+arcpy.env.workspace = home
 DeleteTempFiles()
 #RemoveLayerFromMXD('*_temp')
 print "Starting Part 3 - Distance to Inlet"
-
-# Run Dist2Inlet
 Dist2Inlet(extendedTransects, shoreline, transUIDfield, xpts='shoreline2trans')
 
 
@@ -211,9 +211,8 @@ Requires: extended transects, boundary polygon
 --> barrierBoundary
 '''
 DeleteTempFiles()
-shoreline = 'FI2014_ShoreBetweenInlets'
 print "Starting Part 4 - Get barrier widths and output transects"
-GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, IDfield='sort_ID')
+GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, IDfield=transUIDfield)
 
 '''___________________OUTPUT TRANSECTS_________________________________________
 Output populated transects as: extendedTransects, extTrans_tidy, rst_transPopulated

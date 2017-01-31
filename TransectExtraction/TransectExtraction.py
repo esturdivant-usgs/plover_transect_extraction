@@ -508,64 +508,61 @@ def JoinMetricsToTransects(transects,tempfile,fieldnamesdict):
     arcpy.Delete_management(os.path.join(home,tempfile))
     return transects
 """
-def JoinFields(fc,sourcefile,joinfieldsdict,joinfields=['sort_ID']):
-    # Add fields from sourcefile to fc; alter
-    # If joinfieldsdict is a list/tuple instead of dictionary, convert.
-    if type(joinfieldsdict) is list or type(joinfieldsdict) is tuple:
-        joinlist = joinfieldsdict
-        joinfieldsdict = {}
+def JoinFields(targetfc, sourcefile, dest2src_fields, joinfields=['sort_ID']):
+    # Add fields from sourcefile to targetfc; alter
+    # If dest2src_fields is a list/tuple instead of dictionary, convert.
+    if type(dest2src_fields) is list or type(dest2src_fields) is tuple:
+        joinlist = dest2src_fields
+        dest2src_fields = {}
         for new in joinlist:
-            joinfieldsdict[new] = new
-    # Prepare target FC to receive join: remove new field if it exists and find name of old field
-    print('Deleting any fields in {} with the name of fields to be joined ({}).'.format(fc, joinfieldsdict.keys()))
-    for (new,old) in joinfieldsdict.items():
-        # Remove new field from FC if it already exists
-        if fieldExists(fc,new):
-            try:
-                arcpy.DeleteField_management(fc,new)
-            except:
-                pass
-        # Search for fieldname matching 'old' field
-        found = False # initialize 'found' as False; if old field exists, it is True
-        if fieldExists(sourcefile,old):
-            found = True
-        else:
-            # identify most similarly named field and replace in joinfieldsdict
-            fieldlist = arcpy.ListFields(sourcefile,old+'*')
+            dest2src_fields[new] = new
+    # Prepare target and source FCs: remove new field if it exists and find name of src field
+    print('Deleting any fields in {} with the name of fields to be joined ({}).'.format(targetfc, dest2src_fields.keys()))
+    for (dest, src) in dest2src_fields.items():
+        # Remove dest field from FC if it already exists
+        try: #if fieldExists(targetfc, dest):
+            arcpy.DeleteField_management(targetfc, dest)
+        except:
+            pass
+        # Search for fieldname matching 'src' field
+        found = fieldExists(sourcefile, src) # if src field exists, found is True
+        if not found:
+            # identify most similarly named field and replace in dest2src_fields
+            fieldlist = arcpy.ListFields(sourcefile, src+'*')
             if len(fieldlist) < 2:
-                joinfieldsdict[new]=fieldlist[0].name
+                dest2src_fields[dest] = fieldlist[0].name
                 found=True
             else:
                 for f in fieldlist:
                     if f.name.endswith('_sm'):
-                        joinfieldsdict[new]=f.name
-                        found=True
+                        dest2src_fields[dest] = f.name
+                        found = True
         if not found:
-            raise AttributeError("Field similar to {} was not found in {}.".format(old ,sourcefile))
-    # Add [old] fields from sourcefile to FC
-    oldfields = joinfieldsdict.values()
-    print('Joining fields from {} to {}: {}'.format(sourcefile, fc, oldfields))
+            raise AttributeError("Field similar to {} was not found in {}.".format(src, sourcefile))
+    # Add [src] fields from sourcefile to targetFC
+    src_fnames = dest2src_fields.values()
+    print('Joining fields from {} to {}: {}'.format(sourcefile, targetfc, src_fnames))
     if len(joinfields)==1:
         try:
-            arcpy.JoinField_management(fc, joinfields, sourcefile, joinfields, oldfields)
-        except RuntimeError:
-            print(arcpy.GetMessages(2))
-            print("joinfieldsdict.values: {}".format(oldfields))
+            arcpy.JoinField_management(targetfc, joinfields, sourcefile, joinfields, src_fnames)
+        except RuntimeError as e:
+            print("JoinField_management produced RuntimeError: {} \nHere were the inputs:".format(e))
+            print("dest2src_fields.values (src_fnames): {}".format(src_fnames))
             print("joinfields: {}".format(joinfields))
     elif len(joinfields)==2:
-        arcpy.JoinField_management(fc, joinfields[0], sourcefile, joinfields[1], oldfields)
+        arcpy.JoinField_management(targetfc, joinfields[0], sourcefile, joinfields[1], src_fnames)
     else:
         print 'joinfield accepts either one or two values only.'
-    # Rename new fields from old fields
+    # Rename new fields from src fields
     print('Renaming the joined fields to their new names...')
-    for (new,old) in joinfieldsdict.items():
-        if not new == old:
+    for (dest, src) in dest2src_fields.items():
+        if not dest == src:
             try:
-                arcpy.AlterField_management(fc,old,new,new)
+                arcpy.AlterField_management(targetfc, src, dest, dest)
             except:
                 pass
     #arcpy.Delete_management(os.path.join(arcpy.env.workspace,sourcefile))
-    return fc
+    return targetfc
 
 def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, pt2trans_disttolerance):
     shl2trans = 'SHL2trans'
@@ -584,46 +581,96 @@ def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, pt
     arcpy.JoinField_management(extendedTransects,IDfield,shl2trans,IDfield,shlfields)
     return extendedTransects
 
-def ArmorLineToTransects(in_trans, armorLines, IDfield, proj_code, tempfile, elevGrid_5m):
-    armz='Arm_z'
+def ArmorLineToTransects(in_trans, armorLines, IDfield, proj_code, elevGrid_5m):
     arm2trans="arm2trans"
-    armorfields = ['Arm_Lon','Arm_Lat','Arm_x','Arm_y','Arm_z']
     if not arcpy.Exists(arm2trans):
         # Create armor points with XY and LatLon fields
+        tempfile = arm2trans+"_temp"
         DeleteExtraFields(armorLines)
-        arcpy.Intersect_analysis((armorLines,in_trans), tempfile, output_type='POINT')
-        AddXYAttributes(tempfile,arm2trans,'Arm',proj_code)
-        AddNewFields(arm2trans,armz,fieldtype="DOUBLE")
+        arcpy.Intersect_analysis((armorLines, in_trans), tempfile, output_type='POINT')
+        AddXYAttributes(tempfile, arm2trans,'Arm',proj_code)
+        AddNewFields(arm2trans, 'Arm_z', fieldtype="DOUBLE")
         # Get elevation at points
         print('Getting elevation of beach armoring by extracting elevation values to arm2trans points.')
         arcpy.sa.ExtractMultiValuesToPoints(arm2trans,[[elevGrid_5m, 'z_tmp']]) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
-        with arcpy.da.UpdateCursor(arm2trans,[armz,'z_tmp']) as cursor:
+        with arcpy.da.UpdateCursor(arm2trans, ['Arm_z','z_tmp']) as cursor:
             for row in cursor:
                 cursor.updateRow([row[1], row[1]])
     # Join
+    armorfields = ['Arm_Lon','Arm_Lat','Arm_x','Arm_y','Arm_z']
     arcpy.DeleteField_management(in_trans, armorfields) #In case of reprocessing
     arcpy.JoinField_management(in_trans, IDfield, arm2trans, IDfield, armorfields)
     # How do I know which point will be encountered first? - don't want those in back to take the place of
     return in_trans
 
+def PointMetricsToTransects(transects, oldPts, tempfile, prefix, idfield='sort_ID', tolerance='25 METERS'):
+    # Join nearest points within 10m to transect --> tempfile
+    fmapdict = {'lon': {'dest': prefix+'_Lon'},
+                'lat': {'dest': prefix+'_Lat'},
+                'east': {'dest': prefix+'_x'},
+                'north': {'dest': prefix+'_y'},
+                '_z': {'dest': prefix+'_z'}}
+    for key in fmapdict:
+        src = key
+        if not fieldExists(oldPts, src):
+            # identify most similarly named field and replace in dest2src_fields
+            fieldlist = arcpy.ListFields(oldPts, src+'*')
+            if len(fieldlist) == 1: # if there is only one field that matches src
+                src = fieldlist[0].name
+            elif len(fieldlist) > 1:
+                for f in fieldlist:
+                    if f.name.endswith('_sm'):
+                        src = f.name
+            else:
+                fieldlist = arcpy.ListFields(oldPts, '*'+src+'*')
+                if len(fieldlist) == 1: # if there is only one field that matches src
+                    src = fieldlist[0].name
+                elif len(fieldlist) > 1:
+                    for f in fieldlist:
+                        if f.name.endswith('_sm'):
+                            src = f.name
+                else:
+                    raise AttributeError("Field similar to {} was not found in {}.".format(src, oldPts))
+        fmapdict[key]['src'] = src
+    fmapdict['idfield'] = idfield
+    fmapdict['transects'] = transects
+    fmapdict['oldPts'] = oldPts
+    fmap = '{idfield} "{idfield}" true true false 2 Short 0 0 , First, #, {transects}, {idfield}, -1, -1;'\
+    '{lon[dest]} "{lon[dest]}" true true false 8 Double 0 0 , First, #, {oldPts}, {lon[src]},-1,-1;'\
+    '{lat[dest]} "{lat[dest]}" true true false 8 Double 0 0 , First, #, {oldPts}, {lat[src]} ,-1,-1;'\
+    '{east[dest]} "{east[dest]}" true true false 8 Double 0 0 ,First,#, {oldPts}, {east[src]} ,-1,-1;'\
+    '{north[dest]} "{north[dest]}" true true false 8 Double 0 0 ,First,#, {oldPts}, {north[src]} ,-1,-1;'\
+    '{_z[dest]} "{_z[dest]}" true true false 8 Double 0 0 ,First,#, {oldPts}, {_z[src]},-1,-1'.format(**fmapdict)
+    arcpy.SpatialJoin_analysis(transects, oldPts, tempfile, 'JOIN_ONE_TO_ONE',
+                               'KEEP_COMMON', fmap, "CLOSEST", tolerance) # one-to-one # Error could result from different coordinate systems?
+    destfields = []
+    for val in fmapdict.values():
+        try:
+            destfields.append(val['dest'])
+        except:
+            pass
+    arcpy.DeleteField_management(transects, destfields)
+    arcpy.JoinField_management(transects, idfield, tempfile, idfield, destfields)
+    return transects
+
 def BeachPointMetricsToTransects(transects, oldPts, newPts, fieldnamesdict,joinfields=['sort_ID'], tempfile='trans_temp', tolerance='25 METERS'):
     # Save only points within 10m of transect and join beach point metrics to transects
     # 1. Create ID field and populate with OBJECTID
     # 2. Join nearest point within 10m to transect --> tempfile
-    ReplaceFields(oldPts,{'ID':'OID@'},'SINGLE')
-    arcpy.SpatialJoin_analysis(transects,oldPts, tempfile,'#','#','#',"CLOSEST",tolerance) # one-to-one # Error could result from different coordinate systems?
+    ReplaceFields(oldPts, {'ID': 'OID@'}, 'SINGLE')
+    arcpy.SpatialJoin_analysis(transects, oldPts, tempfile, '#', '#', '#', "CLOSEST", tolerance) # one-to-one # Error could result from different coordinate systems?
     if not arcpy.Exists(newPts):
-        arcpy.MakeFeatureLayer_management(oldPts,oldPts+'_lyr')
-        arcpy.AddJoin_management(oldPts+'_lyr',"ID", tempfile,"ID","KEEP_COMMON") # KEEP COMMON is the key to this whole thing - probably a better way to accomplish with SelectByLocation...
+        # I'm not sure why this step (creating points) is necessary
+        arcpy.MakeFeatureLayer_management(oldPts, oldPts+'_lyr')
+        arcpy.AddJoin_management(oldPts+'_lyr', "ID", tempfile, "ID", "KEEP_COMMON") # KEEP COMMON is the key to this whole thing - probably a better way to accomplish with SelectByLocation...
         arcpy.CopyFeatures_management(oldPts+'_lyr', newPts)
         #arcpy.RemoveJoin_management(oldPts+'_lyr')
     # Delete any fields with raw suffix to prevent confusion with lat lon east north fields that we want to use
     try:
-        for fname in arcpy.ListFields(transects,'*_raw'):
-            arcpy.DeleteField_management(transects,fname)
+        [arcpy.DeleteField_management(transects, fname) for fname in arcpy.ListFields(transects,'*_raw')]
     except:
         pass
-    JoinFields(transects,tempfile,fieldnamesdict,joinfields=joinfields)
+    JoinFields(transects, tempfile, fieldnamesdict, joinfields=joinfields)
     return transects
 
 def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, IDfield, proj_code, disttolerance, home, elevGrid_5m):
@@ -638,14 +685,12 @@ def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, IDfield, proj_co
     ShorelinePtsToTransects(out_fc, inPtsDict, IDfield, proj_code, disttolerance)
     # Armor
     print('Getting position (lat, lon, x, y, z) of beach armoring for each transect...')
-    ArmorLineToTransects(out_fc, inPtsDict['armorLines'], IDfield, proj_code, tempfile, elevGrid_5m)
+    ArmorLineToTransects(out_fc, inPtsDict['armorLines'], IDfield, proj_code, elevGrid_5m)
     # Dunes
-    dh2trans = "dh2trans"
-    dhfields = {'DH_Lon':'lon', 'DH_Lat':'lat', 'DH_x':'east', 'DH_y':'north', 'DH_z':'dhigh_z'}
-    BeachPointMetricsToTransects(out_fc, inPtsDict['dhPts'], dh2trans, dhfields, joinfields=[IDfield,IDfield], tempfile=dh2trans+'_temp', tolerance=disttolerance)
-    dl2trans = "dl2trans"
-    dlfields = {'DL_Lon':'lon', 'DL_Lat':'lat', 'DL_x':'east', 'DL_y':'north', 'DL_z':'dlow_z'}
-    BeachPointMetricsToTransects(out_fc, inPtsDict['dlPts'], dl2trans, dlfields, joinfields=[IDfield,IDfield], tempfile=dl2trans+'_temp', tolerance=disttolerance)
+    PointMetricsToTransects(out_fc, inPtsDict['dhPts'], "dh2trans", 'DH',
+                                 IDfield, tolerance=disttolerance)
+    PointMetricsToTransects(out_fc, inPtsDict['dlPts'], "dl2trans", 'DL',
+                                 IDfield, tolerance=disttolerance)
     # Time report
     endPart1 = time.clock()
     duration = endPart1 - startPart1

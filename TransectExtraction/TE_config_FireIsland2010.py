@@ -11,9 +11,9 @@ from TransectExtraction import *
 
 ############ Inputs #########################
 SiteYear_strings = {'site': 'FireIsland',
-                    'year': '2012',
+                    'year': '2010',
                     'region': 'NewYork',
-                    'code': 'fi12',
+                    'code': 'fi10',
                     'MHW': .46,
                     'MLW': -1.01,
                     'MTL': None}
@@ -38,15 +38,15 @@ orig_extTrans = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_st
 orig_tidytrans = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 rst_transID = os.path.join(archive_dir, '{site}_rstTransID'.format(**SiteYear_strings))
 ############## Year-specific Inputs ###############################
-#extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
+extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 ShorelinePts = 'FI{year}_SLpts'.format(**SiteYear_strings)
 dhPts = 'FI{year}_DHpts'.format(**SiteYear_strings)				# Dune crest
 dlPts = 'FI{year}_DLpts'.format(**SiteYear_strings) 		  # Dune toe
 inletLines = 'FI{year}_inletLines'.format(**SiteYear_strings)  # manually created
 armorLines = 'FI{year}_sandfencing'.format(**SiteYear_strings)
 barrierBoundary = 'FI{year}_BNDpoly_MHWocean'.format(**SiteYear_strings)   # Barrier Boundary polygon
-shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)    # Complete shoreline ready to become route in Pt. 2
-elevGrid = '{site}{year}_DEM'.format(**SiteYear_strings)				# Elevation
+shoreline = 'FI{year}_ShoreBetweenInlets'.format(**SiteYear_strings)    # Complete shoreline ready to become route in Pt. 2
+elevGrid = 'FI{year}_DEM'.format(**SiteYear_strings)				# Elevation
 elevGrid_5m = elevGrid+'_5m'				# Elevation
 #habitat = 'habitat_201211' 			# Habitat
 

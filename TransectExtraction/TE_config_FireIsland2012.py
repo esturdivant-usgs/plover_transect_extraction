@@ -37,6 +37,7 @@ out_dir=r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{si
 orig_extTrans = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
 orig_tidytrans = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 rst_transID = os.path.join(archive_dir, '{site}_rstTransID'.format(**SiteYear_strings))
+extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 
 extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 ShorelinePts = 'FI{year}_SLpts'.format(**SiteYear_strings)
@@ -51,28 +52,18 @@ elevGrid_5m = elevGrid+'_5m'				# Elevation
 
 ############## Outputs ###############################
 extendedTransects = '{site}{year}_extTrans_working'.format(**SiteYear_strings)
-dh2trans = '{site}{year}_DH2trans'.format(**SiteYear_strings)							# DHigh within 10m
-dl2trans = '{site}{year}_DL2trans'.format(**SiteYear_strings)						# DLow within 10m
-arm2trans = '{site}{year}_arm2trans'.format(**SiteYear_strings)
-oceanside_auto = '{site}{year}_MHWfromSLPs'.format(**SiteYear_strings)
-shl2trans = '{site}{year}_SHL2trans'.format(**SiteYear_strings)							# beach slope from lidar within 10m of transect
 MLWpts = '{site}{year}_MLW2trans'.format(**SiteYear_strings)                     # MLW points calculated during Beach Width calculation
 CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)                     # Points used as upper beach edge for Beach Width and height
 shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
 slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
 
 extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
-transects_part2 = os.path.join(home,'trans_part2')
-transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
 transPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
-tranSplitPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
-tranSplitPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
-tranSplitPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
-tranSplitPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
+transPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
+transPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
+transPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
 out_stats = os.path.join(home,"avgZ_byTransect")
-extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
-beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 transPts_presort = 'transPts_presort'
 
