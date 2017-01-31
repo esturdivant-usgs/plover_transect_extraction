@@ -67,7 +67,7 @@ CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)               
 shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
 slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
 
-extTrans_tidy = "{site}{year}_tidytrans".format(**SiteYear_strings)
+extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
 transects_part2 = os.path.join(home,'trans_part2')
 transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
 transPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
@@ -84,6 +84,7 @@ transPts_presort = 'transPts_presort'
 
 rst_transID = "{site}{year}_rstTransID".format(**SiteYear_strings)
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
+rst_trans_grid = "{code}_trans".format(**SiteYear_strings)
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"

@@ -14,6 +14,7 @@ from TransectExtraction import *
 SiteYear_strings = {'site': 'ParkerRiver',
                     'year': '2014',
                     'region': 'Massachusetts',
+                    'code': "pr14",
                     'MHW':1.22,
                     'MLW':-1.37, # average of approximate MLW on Chesapeake Bay side (-0.47) and Atlantic side (-0.58)
                     'MTL':None}
@@ -85,6 +86,7 @@ transPts_presort = 'transPts_presort'
 
 rst_transID = "{site}{year}_rstTransID".format(**SiteYear_strings)
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
+rst_trans_grid = "{code}_trans".format(**SiteYear_strings)
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"
@@ -121,7 +123,7 @@ transPt_fields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
     'DistSegDH', 'DistSegDL', 'DistSegArm',
     'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
     'MAX_ptZmhw', 'MEAN_ptZmhw']
-
+"""
 ## Just PR
 transect_fields_v1 = ['SL_Lat', 'SL_Lon', 'SL_easting', 'SL_northing', 'Bslope',
     'DL_Lat', 'DL_Lon', 'DL_easting', 'DL_northing', 'DL_z', 'DL_zMHW',
@@ -134,10 +136,6 @@ transect_fields_v2 = ['MLW_easting','MLW_northing',
   'CP_easting','CP_northing','CP_zMHW']
 
 
-missing_Tfields = []
-for fname in transect_fields:
-    if not fieldExists(extendedTransects, fname):
-        missing_Tfields.append(fname)
 missing_Tfields = fieldsAbsent(extendedTransects, transect_fields)
 
 for i in range(len(transect_fields_v1)):
@@ -152,3 +150,4 @@ arcpy.DeleteField_management(extendedTransects, transect_fields_v2)
 DeleteExtraFields(extTrans_tidy, transect_fields_part0+transect_fields_part1+transect_fields_part3+transect_fields_part4)
 missing_Tfields = fieldsAbsent(extTrans_tidy, transect_fields)
 arcpy.JoinField_management(extTrans_tidy,transUIDfield,extendedTransects,transUIDfield,missing_Tfields)
+"""

@@ -5,20 +5,27 @@ Author: Emily Sturdivant
 email: esturdivant@usgs.gov; bgutierrez@usgs.gov; sawyer.stippa@gmail.com
 Date last modified: 11/22/2016
 '''
-import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
+import arcpy
+import time
+import os
+import pythonaddins
+import math
+import sys
+# path to TransectExtraction module
+sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction")
 from TransectExtraction import *
 
 ############ Inputs #########################
 SiteYear_strings = {'site': 'Forsythe',
                     'year': '2012',
                     'region': 'NewJersey',
-                    'MHW':0.43,
-                    'MLW':-0.61,
-                    'MTL':None}
+                    'code': "ebf12",
+                    'MHW': 0.43,
+                    'MLW': -0.61,
+                    'MTL': None}
 
 # arcpy.GetParameterAsText(0)
-######## Set environments ################################################################
+# ####### Set environments ####################################################
 arcpy.env.overwriteOutput = True 						# Overwrite output?
 arcpy.CheckOutExtension("Spatial") 						# Checkout Spatial Analysis extension
 
@@ -30,8 +37,8 @@ plover_rst_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{re
 arcpy.env.workspace = plover_rst_dir
 cellsize_rst = os.path.join(plover_rst_dir, arcpy.ListRasters()[0])
 
-########### Automatic population ###########
-arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format( **SiteYear_strings)
+# ########## Automatic population ###########
+arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format(**SiteYear_strings)
 SiteYear_strings['home'] = home
 out_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\Extracted_Data'.format(**SiteYear_strings)
 archive_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\All_Years\{site}_transects.gdb'.format(**SiteYear_strings)
@@ -39,19 +46,19 @@ archive_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{regio
 MHW = SiteYear_strings['MHW']
 MLW = SiteYear_strings['MLW']
 dMHW = -MHW                         # Beach height adjustment
-oMLW = MHW-MLW                      # MLW offset from MHW # Beach height adjustment (relative to MHW)
+oMLW = MHW-MLW                      # MLW offset from MHW
 SiteYear_strings['MTL'] = MTL = (MHW+MLW)/2
 
 orig_extTrans = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
 orig_tidytrans = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
-extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
+extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings)  # Created MANUALLY: see TransExtv4Notes.txt
 ShorelinePts = '{site}{year}_SLpts'.format(**SiteYear_strings)
 dhPts = '{site}{year}_DHpts'.format(**SiteYear_strings)				# Dune crest
-dlPts = '{site}{year}_DLpts'.format(**SiteYear_strings) 		  # Dune toe
+dlPts = '{site}{year}_DLpts'.format(**SiteYear_strings) 		    # Dune toe
 MHW_oceanside = "{site}{year}_MHWfromSLPs".format(**SiteYear_strings)
-inletLines = '{site}{year}_inletLines'.format(**SiteYear_strings) # manually create lines based on the boundary polygon that correspond to end of land and cross the MHW line
+inletLines = '{site}{year}_inletLines'.format(**SiteYear_strings)  # manually create lines based on the boundary polygon that correspond to end of land and cross the MHW line
 armorLines = '{site}{year}_armor'.format(**SiteYear_strings)
-barrierBoundary = '{site}{year}_bndpoly_2sl'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
+barrierBoundary = '{site}{year}_bndpoly_2sl_edited'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
 elevGrid = '{site}{year}_DEM'.format(**SiteYear_strings)				# Elevation
 elevGrid_5m = elevGrid+'_5m'				# Elevation
 #habitat = 'habitat_201211' 			# Habitat
@@ -85,6 +92,7 @@ transPts_presort = 'transPts_presort'
 
 rst_transID = "{site}{year}_rstTransID".format(**SiteYear_strings)
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
+rst_trans_grid = "{code}_trans".format(**SiteYear_strings)
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"
@@ -104,23 +112,24 @@ else:
     utmSR = arcpy.SpatialReference(proj_code)
 
 ########### Field names ##########################
-transect_fields_part0 = ['sort_ID','TRANSORDER', 'TRANSECTD', 'LRR', 'LR2', 'LSE', 'LCI90']
+transect_fields_part0 = ['sort_ID', 'TRANSORDER', 'TRANSECTD',
+                         'LRR', 'LR2', 'LSE', 'LCI90']
 transect_fields_part1 = ['SL_Lat', 'SL_Lon', 'SL_x', 'SL_y', 'Bslope',
-    'DL_Lat', 'DL_Lon', 'DL_x', 'DL_y', 'DL_z', 'DL_zMHW',
-    'DH_Lat', 'DH_Lon', 'DH_x', 'DH_y', 'DH_z', 'DH_zMHW',
-    'Arm_Lat', 'Arm_Lon', 'Arm_x', 'Arm_y', 'Arm_z', 'Arm_zMHW',
-    'DistDH', 'DistDL', 'DistArm']
-transect_fields_part2 = ['MLW_x','MLW_y',
-   'bh_mhw','bw_mhw',
-   'bh_mlw','bw_mlw',
-   'CP_x','CP_y','CP_zMHW']
+                         'DL_Lat', 'DL_Lon', 'DL_x', 'DL_y', 'DL_z', 'DL_zMHW',
+                         'DH_Lat', 'DH_Lon', 'DH_x', 'DH_y', 'DH_z', 'DH_zMHW',
+                         'Arm_Lat', 'Arm_Lon', 'Arm_x', 'Arm_y', 'Arm_z', 'Arm_zMHW',
+                         'DistDH', 'DistDL', 'DistArm']
+transect_fields_part2 = ['MLW_x', 'MLW_y',
+                         'bh_mhw', 'bw_mhw',
+                         'bh_mlw', 'bw_mlw',
+                         'CP_x', 'CP_y', 'CP_zMHW']
 transect_fields_part3 = ['Dist2Inlet']
 transect_fields_part4 = ['WidthPart', 'WidthLand', 'WidthFull']
 transect_fields = transect_fields_part1 + transect_fields_part2 + transect_fields_part3 + transect_fields_part4
 transPt_fields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
-    'DistSegDH', 'DistSegDL', 'DistSegArm',
-    'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
-    'MAX_ptZmhw', 'MEAN_ptZmhw']
+                  'DistSegDH', 'DistSegDL', 'DistSegArm',
+                  'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
+                  'MAX_ptZmhw', 'MEAN_ptZmhw']
 
 """
 # Update fieldnames to new:

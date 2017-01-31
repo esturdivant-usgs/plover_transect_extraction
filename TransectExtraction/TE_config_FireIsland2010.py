@@ -6,17 +6,18 @@ email: esturdivant@usgs.gov; bgutierrez@usgs.gov; sawyer.stippa@gmail.com
 Date last modified: 11/22/2016
 '''
 import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
+sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
 
 ############ Inputs #########################
-SiteYear_strings = {'site': 'Forsythe',
-                    'year': '2010',
-                    'region': 'NewJersey',
-                    'code': 'ebf10',
-                    'MHW':0.43,
-                    'MLW':-0.61,
-                    'MTL':None}
+SiteYear_strings = {'site': 'FireIsland',
+                    'year': '2012',
+                    'region': 'NewYork',
+                    'code': 'fi12',
+                    'MHW': .46,
+                    'MLW': -1.01,
+                    'MTL': None}
+SiteYear_strings['home'] = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb".format(**SiteYear_strings)
 
 # arcpy.GetParameterAsText(0)
 ######## Set environments ################################################################
@@ -26,67 +27,65 @@ arcpy.CheckOutExtension("Spatial") 						# Checkout Spatial Analysis extension
 CreateMHWline = False
 rawtransects = False
 
-plover_rst_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\Zeigler_analysis\Layers_for_BN\{year}\BaseLayers'.format(
-    **SiteYear_strings)
-arcpy.env.workspace = plover_rst_dir
-cellsize_rst = os.path.join(plover_rst_dir, arcpy.ListRasters()[0])
+############## Inputs ###############################
+arcpy.env.workspace = home = SiteYear_strings['home']
+#arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format( **SiteYear_strings)
+archive_dir=r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\All_Years\{site}_transects.gdb'.format(**SiteYear_strings)
+out_dir=r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\Extracted_Data'.format(**SiteYear_strings)
 
-########### Automatic population ###########
-arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format( **SiteYear_strings)
-SiteYear_strings['home'] = home
-out_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\Extracted_Data'.format(**SiteYear_strings)
-archive_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\All_Years\{site}_transects.gdb'.format(**SiteYear_strings)
-
-MHW = SiteYear_strings['MHW']
-MLW = SiteYear_strings['MLW']
-dMHW = -MHW                         # Beach height adjustment
-oMLW = MHW-MLW                      # MLW offset from MHW # Beach height adjustment (relative to MHW)
-SiteYear_strings['MTL'] = MTL = (MHW+MLW)/2
-
+############## Site-level Inputs ###############################
 orig_extTrans = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
 orig_tidytrans = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
-extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
-ShorelinePts = '{site}{year}_SLpts'.format(**SiteYear_strings)
-dhPts = '{site}{year}_DHpts'.format(**SiteYear_strings)				# Dune crest
-dlPts = '{site}{year}_DLpts'.format(**SiteYear_strings) 		  # Dune toe
-MHW_oceanside = "{site}{year}_MHWfromSLPs".format(**SiteYear_strings)
-inletLines = '{site}{year}_inletLines'.format(**SiteYear_strings) # manually create lines based on the boundary polygon that correspond to end of land and cross the MHW line
-armorLines = '{site}{year}_armor'.format(**SiteYear_strings)
-barrierBoundary = '{site}{year}_bndpoly_2sl'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
+rst_transID = os.path.join(archive_dir, '{site}_rstTransID'.format(**SiteYear_strings))
+############## Year-specific Inputs ###############################
+#extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
+ShorelinePts = 'FI{year}_SLpts'.format(**SiteYear_strings)
+dhPts = 'FI{year}_DHpts'.format(**SiteYear_strings)				# Dune crest
+dlPts = 'FI{year}_DLpts'.format(**SiteYear_strings) 		  # Dune toe
+inletLines = 'FI{year}_inletLines'.format(**SiteYear_strings)  # manually created
+armorLines = 'FI{year}_sandfencing'.format(**SiteYear_strings)
+barrierBoundary = 'FI{year}_BNDpoly_MHWocean'.format(**SiteYear_strings)   # Barrier Boundary polygon
+shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)    # Complete shoreline ready to become route in Pt. 2
 elevGrid = '{site}{year}_DEM'.format(**SiteYear_strings)				# Elevation
 elevGrid_5m = elevGrid+'_5m'				# Elevation
 #habitat = 'habitat_201211' 			# Habitat
 
 ############## Outputs ###############################
 extendedTransects = '{site}{year}_extTrans_working'.format(**SiteYear_strings)
-dh2trans = '{site}{year}_DH2trans'.format(**SiteYear_strings)							# DHigh within 10m
-dl2trans = '{site}{year}_DL2trans'.format(**SiteYear_strings)						# DLow within 10m
-arm2trans = '{site}{year}_arm2trans'.format(**SiteYear_strings)
-oceanside_auto = '{site}{year}_MHWfromSLPs'.format(**SiteYear_strings)
-shl2trans = '{site}{year}_SHL2trans'.format(**SiteYear_strings)							# beach slope from lidar within 10m of transect
+# dh2trans = '{site}{year}_DH2trans'.format(**SiteYear_strings)							# DHigh within 10m
+# dl2trans = '{site}{year}_DL2trans'.format(**SiteYear_strings)						# DLow within 10m
+# arm2trans = '{site}{year}_arm2trans'.format(**SiteYear_strings)
+# oceanside_auto = '{site}{year}_MHWfromSLPs'.format(**SiteYear_strings)
+# shl2trans = '{site}{year}_SHL2trans'.format(**SiteYear_strings)							# beach slope from lidar within 10m of transect
 MLWpts = '{site}{year}_MLW2trans'.format(**SiteYear_strings)                     # MLW points calculated during Beach Width calculation
 CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)                     # Points used as upper beach edge for Beach Width and height
-shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
 slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
 
 extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
-transects_part2 = os.path.join(home,'trans_part2')
-transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
+# transects_part2 = os.path.join(home,'trans_part2')
+# transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
 transPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
-tranSplitPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
-tranSplitPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
-tranSplitPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
-tranSplitPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
+transPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
+transPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
+transPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
+# transPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
 out_stats = os.path.join(home,"avgZ_byTransect")
-extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
-beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
+#extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
+#beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 transPts_presort = 'transPts_presort'
 
 rst_transID = "{site}{year}_rstTransID".format(**SiteYear_strings)
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
 rst_trans_grid = "{code}_trans".format(**SiteYear_strings)
+
+########### Automatic population ###########
+MHW = SiteYear_strings['MHW']
+MLW = SiteYear_strings['MLW']
+dMHW = -MHW                         # Beach height adjustment
+oMLW = MHW-MLW                      # MLW offset from MHW # Beach height adjustment (relative to MHW)
+SiteYear_strings['MTL'] = MTL = (MHW+MLW)/2
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"

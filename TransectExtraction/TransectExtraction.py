@@ -129,7 +129,6 @@ def RemoveLayerFromMXD(lyrname):
                 arcpy.mapping.RemoveLayer(df, lyr)
                 return True
             else:
-                print("'{}' layer not present in current map document data frame".format(lyrname))
                 return True
     except:
         print("Layer '{}' could not be removed from map document.".format(lyrname))
@@ -193,7 +192,7 @@ def AddXYAttributes(fc,newfc,prefix,proj_code=26918):
             cursor.updateRow(row)
     return newfc
 
-def ReplaceValueInFC(fc,oldvalue=-99999,newvalue=None, fields=[]):
+def ReplaceValueInFC(fc,oldvalue=9999,newvalue=None, fields="*"):
     # Replace oldvalue with newvalue in fields in fc
     with arcpy.da.UpdateCursor(fc, fields) as cursor:
         fieldindex = range(len(cursor.fields))
@@ -201,11 +200,12 @@ def ReplaceValueInFC(fc,oldvalue=-99999,newvalue=None, fields=[]):
             for i in fieldindex:
                 if row[i] == oldvalue:
                     row[i] = newvalue
-            try:
-                cursor.updateRow(row)
-            except RuntimeError:
-                print(cursor.fields[i])
-                print(row)
+            cursor.updateRow(row)
+            # try:
+            #     cursor.updateRow(row)
+            # except RuntimeError:
+            #     print(cursor.fields[i])
+            #     print(row)
     return fc
 
 def ReplaceValueInFC_v1(fc,fields=[],oldvalue=-99999,newvalue=None):
@@ -517,7 +517,7 @@ def JoinFields(fc,sourcefile,joinfieldsdict,joinfields=['sort_ID']):
         for new in joinlist:
             joinfieldsdict[new] = new
     # Prepare target FC to receive join: remove new field if it exists and find name of old field
-    print('Deleting any fields in {} with the name of fields to be joined ({}).'.format(fc, joinfieldsdict.new()))
+    print('Deleting any fields in {} with the name of fields to be joined ({}).'.format(fc, joinfieldsdict.keys()))
     for (new,old) in joinfieldsdict.items():
         # Remove new field from FC if it already exists
         if fieldExists(fc,new):
@@ -758,10 +758,10 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, MLWpts, C
     distfields = ['DistDH','DistDL','DistArm'] # distance from shoreline
     # Check for necessary fields
     if not skip_field_check:
-        for fname in in_fields:
-            if not fieldExists(in_trans, fname):
-                print("Field '{}' not present in transects file '{}'. We recommend running AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)".format(fname, in_trans))
-                return False
+        missing_fields = fieldsAbsent(in_trans, in_fields)
+        if missing_fields:
+            print("Fieldd '{}' not present in transects file '{}'. We recommend running AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)".format(missing_fields, in_trans))
+            return False
     # Copy in_trans to out_fc if the output will be different than the input
     if not in_trans == out_fc:
         arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
@@ -836,54 +836,66 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, MLWpts, C
     print("Top of beach could not be located for {} out of {} transects.".format(errorct,transectct))
     # Create MLW and CP points for error checking
     if create_points:
-        arcpy.MakeXYEventLayer_management(out_fc,'MLW_x','MLW_y',MLWpts+'_lyr',utmSR)
+        spatial_ref = arcpy.Describe(out_fc).spatialReference
+        arcpy.MakeXYEventLayer_management(out_fc,'MLW_x','MLW_y',MLWpts+'_lyr',spatial_ref)
         arcpy.CopyFeatures_management(MLWpts+'_lyr',MLWpts)
         if not arcpy.Exists(CPpts):
-            arcpy.MakeXYEventLayer_management(out_fc,'CP_x','CP_y',CPpts+'_lyr',utmSR)
+            arcpy.MakeXYEventLayer_management(out_fc,'CP_x','CP_y',CPpts+'_lyr',spatial_ref)
             arcpy.CopyFeatures_management(CPpts+'_lyr',CPpts)
     # Time report
     endPart2 = time.clock()
     duration = endPart2 - startPart2
     hours, remainder = divmod(duration, 3600)
     minutes, seconds = divmod(remainder, 60)
-    print "CalculateBeachDistances() completed in %dh:%dm:%fs" % (hours, minutes, seconds)
+    print("CalculateBeachDistances() completed in %dh:%dm:%fs" % (hours, minutes, seconds))
     # Return
     return out_fc
 
-def dist2inlet(in_line, transUIDfield, xpts, coord_priority = "LOWER_LEFT"):
+def dist2inlet(in_line, IDfield, xpts, coord_priority = "LOWER_LEFT"):
     # Assign variables
-    route = "shore_{}_temp".format(coord_priority)
-    distance_table = "dist2inlet_{}_temp".format(coord_priority)
-    ReplaceFields(in_line,{'ORIG_FID':'OID@'},'SHORT') # make ORIG_FID field in shoreline if doesn't already exist
-    arcpy.CreateRoutes_lr(in_line,"ORIG_FID",route,"LENGTH",coordinate_priority=coord_priority) # convert the shoreline to routes
-    arcpy.LocateFeaturesAlongRoutes_lr(xpts, route, 'ORIG_FID', '1 Meters',distance_table,'RID POINT MEAS',distance_field='NO_DISTANCE') # Calculate distance from each transect to [LL] inlet
-    arcpy.JoinField_management(xpts, transUIDfield, distance_table, transUIDfield, "MEAS") # Add distance to xpts
+    route = "shore_{}_temp".format(coord_priority.lower())
+    dist_tbl = "dist2inlet_{}_temp".format(coord_priority.lower())
+    # Prep in_line
+    ReplaceFields(in_line, {'ORIG_FID': 'OID@'}, 'SHORT')  # make ORIG_FID field in shoreline if doesn't already exist
+    # Measure distance of each point along shoreline route
+    arcpy.CreateRoutes_lr(in_line, "ORIG_FID", route, "LENGTH",
+                          coordinate_priority=coord_priority)
+    arcpy.LocateFeaturesAlongRoutes_lr(xpts, route, 'ORIG_FID', '1 Meters', dist_tbl, 'RID POINT MEAS', distance_field='NO_DISTANCE') # Calculate distance from each transect to [LL] inlet
+    # Store distances in xpts
+    arcpy.JoinField_management(xpts, IDfield, dist_tbl, IDfield, "MEAS")
     return xpts
 
-def Dist2Inlet(transects, in_line, transUIDfield='sort_ID', xpts='xpts_temp', two_directions = True):
+def Dist2Inlet(transects, in_line, IDfield='sort_ID', xpts='xpts_temp', two_directions=True):
     # Measure distance from inlet to each transect in both directions
     startPart3 = time.clock()
+    """
+    Set up
+    """
     if not arcpy.Exists(xpts): # Use shl2trans instead?
-        arcpy.Intersect_analysis([transects,in_line],xpts,'ALL','1 METERS','POINT')
+        arcpy.Intersect_analysis([transects, in_line], xpts, 'ALL', '1 METERS', 'POINT')
     else:
-        arcpy.DeleteField_management(xpts, ['MEAS','MEAS_1'])
+        arcpy.DeleteField_management(xpts, ['MEAS', 'MEAS_1'])
+    """
     # Convert shoreline to routes between where each transect crosses the shoreline
+    """
     print('Measuring distance to each transect from lower left corner')
-    dist2inlet(in_line, transUIDfield, xpts, coord_priority = "LOWER_LEFT")
+    dist2inlet(in_line, IDfield, xpts, coord_priority = "LOWER_LEFT")
+    """
     # Perform dist2inlet calculations from other direction on shoreline that is bounded by an inlet on both sides.
-    if fieldExists(in_line, 'Join_Count'):
-        try:
-            arcpy.MakeFeatureLayer_management(in_line,in_line+'_lyr','"SUM_Join_Count">1') # Only use sections that intersect two inlet lines
+    """
+    if fieldExists(in_line, 'SUM_Join_Count'):
+        try:  # Only use sections that intersect two inlet lines
+            arcpy.MakeFeatureLayer_management(in_line,in_line+'_lyr','"SUM_Join_Count">1')
             in_line = in_line+'_lyr'
-        except:
+        except:  # Fails if no features have join_count of more than 1
             two_directions = False
             pass
     else:
         print('Field "SUM_Join_Count" does not exist in {}. We will assume that each shoreline line is bounded by an inlet.'.format(in_line))
     if two_directions:
         print('Measuring distance from other corner (upper right)')
-        dist2inlet(in_line, transUIDfield, xpts, coord_priority = "UPPER_RIGHT")
-        # Save lowest *non-Null* distance value as Dist2Inlet
+        dist2inlet(in_line, IDfield, xpts, coord_priority = "UPPER_RIGHT")
+        # Save the smallest values from the two to MEAS
         with arcpy.da.UpdateCursor(xpts, ('MEAS', 'MEAS_1')) as cursor:
             for row in cursor:
                 if isinstance(row[0],float) and isinstance(row[1],float):
@@ -891,18 +903,19 @@ def Dist2Inlet(transects, in_line, transUIDfield='sort_ID', xpts='xpts_temp', tw
                 elif not isinstance(row[0],float):
                     row[0] = row[1]
                 cursor.updateRow(row)
-    # Create Dist2Inlet field in xpts_temp
+    # Convert MEAS to Dist2Inlet
     try:
         arcpy.AlterField_management(xpts, 'MEAS', 'Dist2Inlet') # Fails when Dist2Inlet field already exists.
-    except: # If we can't simply alter the field name, add a Dist2Inlet field and populate with values from MEAS. MEAS will be deleted later.
+    except:  # If field name won't change, do it manually:
+        # Create Dist2Inlet field and copy values from MEAS. MEAS will be deleted later.
         arcpy.AddField_management(xpts,'Dist2Inlet','DOUBLE')
         with arcpy.da.UpdateCursor(xpts,['Dist2Inlet','MEAS']) as cursor:
             for row in cursor:
                 cursor.updateRow([row[1],row[1]])
         pass
     # Join field Dist2Inlet
-    arcpy.DeleteField_management(transects,'Dist2Inlet') # in case of reprocessing
-    arcpy.JoinField_management(transects, transUIDfield, xpts, transUIDfield, 'Dist2Inlet')
+    arcpy.DeleteField_management(transects,'Dist2Inlet') # if reprocessing
+    arcpy.JoinField_management(transects, IDfield, xpts, IDfield, 'Dist2Inlet')
     # Time report
     endPart3 = time.clock()
     duration = endPart3 - startPart3
@@ -911,7 +924,7 @@ def Dist2Inlet(transects, in_line, transUIDfield='sort_ID', xpts='xpts_temp', tw
     print "Dist2Inlet() completed in %dh:%dm:%fs" % (hours, minutes, seconds)
     return transects
 
-def GetBarrierWidths(in_trans, barrierBoundary, shoreline, transUIDfield='sort_ID', clipped_trans='trans_clipped2island_temp'):
+def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', clipped_trans='trans_clipped2island_temp'):
     """
     Island width - total land (WidthLand), farthest sides (WidthFull), and segment (WidthPart)
     """
@@ -929,21 +942,21 @@ def GetBarrierWidths(in_trans, barrierBoundary, shoreline, transUIDfield='sort_I
     #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
     # Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
     arcpy.FeatureVerticesToPoints_management(clipped_trans, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
-    arcpy.PointsToLine_management("verts_temp","trans_temp",transUIDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
+    arcpy.PointsToLine_management("verts_temp","trans_temp",IDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
     arcpy.SimplifyLine_cartography("trans_temp", "length_temp","POINT_REMOVE",".01","FLAG_ERRORS","NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
     ReplaceFields("length_temp",{'WidthFull':'SHAPE@LENGTH'})
     # Join clipped transects with full barrier lines and transfer width value
-    arcpy.JoinField_management(clipped_trans, transUIDfield, "length_temp", transUIDfield, "WidthFull")
+    arcpy.JoinField_management(clipped_trans, IDfield, "length_temp", IDfield, "WidthFull")
 
     # Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
     arcpy.MultipartToSinglepart_management(clipped_trans,'singlepart_temp')
-    ReplaceFields("singlepart_temp",{'WidthPart':'SHAPE@LENGTH'})
+    ReplaceFields("singlepart_temp", {'WidthPart': 'SHAPE@LENGTH'})
     arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
-    arcpy.JoinField_management(clipped_trans,transUIDfield,"singlepart_temp",transUIDfield,"WidthPart")
+    arcpy.JoinField_management(clipped_trans, IDfield, "singlepart_temp", IDfield, "WidthPart")
     # Add fields to original file
-    joinfields = ["WidthFull","WidthLand","WidthPart"]
+    joinfields = ["WidthFull", "WidthLand", "WidthPart"]
     arcpy.DeleteField_management(in_trans, joinfields) # in case of reprocessing
-    arcpy.JoinField_management(in_trans,transUIDfield,clipped_trans,transUIDfield,joinfields)
+    arcpy.JoinField_management(in_trans, IDfield, clipped_trans, IDfield, joinfields)
     # Time report
     endPart4 = time.clock()
     duration = endPart4 - startPart4
@@ -952,55 +965,59 @@ def GetBarrierWidths(in_trans, barrierBoundary, shoreline, transUIDfield='sort_I
     print "Barrier island widths completed in %dh:%dm:%fs" % (hours, minutes, seconds)
     return clipped_trans
 
-def TransectsToContinuousRaster(in_trans, out_rst, cellsize_rst, IDfield='sort_ID'):
+def TransectsToContinuousRaster(in_trans, out_rst, cell_size, IDfield='sort_ID'):
     # Create raster of sort_ID - each cell value indicates its nearest transect
     # in_trans = extTrans_tidy (only sort_ID field is necessary)
     # out_rst = {}{}_rstTransID
-    trans_rst = 'rst_transID_temp'
-    arcpy.PolylineToRaster_conversion(in_trans, IDfield, trans_rst, cellsize=5)
-    outEucAll = arcpy.sa.EucAllocation(in_trans, maximum_distance=50, cell_size=cellsize_rst, source_field=IDfield)
+    #trans_rst = 'rst_transID_temp'
+    #arcpy.PolylineToRaster_conversion(in_trans, IDfield, trans_rst, cellsize=5)
+    outEucAll = arcpy.sa.EucAllocation(in_trans, maximum_distance=50, cell_size=cell_size, source_field=IDfield)
     outEucAll.save(out_rst)
     return out_rst
 
-def JoinFCtoRaster(in_fc, in_ID, out_rst, IDfield='sort_ID'):
-    # could have separate input FCs for the 1) the geometry and 2) the values. Those would be 1) extTrans_tidy and 2) extendedTransects(_fill). This would remove the need to replace null values in extTrans_tidy
-    if 'Feature' in arcpy.Describe(in_ID).dataType:
-        rst_ID = TransectsToContinuousRaster(in_ID, 'rstID_'+in_ID, cellsize_rst, IDfield)
-    elif not arcpy.Exists(in_ID): # If it's not a feature layer,
-        rst_ID = TransectsToContinuousRaster(in_fc, in_ID, cellsize_rst, IDfield)
-    else:
-        rst_ID = in_ID
-    # else: in_ID must be an existing raster file, which will be used as the base of out_rst
-    arcpy.MakeTableView_management(in_fc, 'tableview')
-    # I tried running ReplaceValueInFC here, but it didn't work - no change in output
+
+def JoinFCtoRaster(in_tbl, rst_ID, out_rst, IDfield='sort_ID'):
+    # Join fields from in_tbl to rst_ID to create new out_rst
+    arcpy.MakeTableView_management(in_tbl, 'tableview')
+    RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
     arcpy.MakeRasterLayer_management(rst_ID, 'rst_lyr')
     arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', IDfield)
     arcpy.CopyRaster_management('rst_lyr', out_rst)
     return out_rst
 
-def FCtoRaster(in_fc, in_ID, out_rst, IDfield, home, fill=False):
+def FCtoRaster(in_fc, in_ID, out_rst, IDfield, home, fill=False, cell_size=5):
+    # Convert feature class to continuous raster inwhich output raster has takes the values from the nearest feature (Euclidean distance).
+    # in_ID could = original tidyTrans, existing ID raster, or ID raster to be created
+    # If an ID raster does not exist, it will be created from the specified ID field of the feature class.
+    # Optionally replace Null values with fill.
     if fill:
         fill_fc = in_fc+'_fill'
         arcpy.FeatureClassToFeatureClass_conversion(in_fc, home, fill_fc)
         fields=[]
         for f in arcpy.ListFields(fill_fc):
-            if f.type!='String':
+            if f.type!='String':  # list all fields that are NOT string type
                 fields.append(f.name)
         ReplaceValueInFC(fill_fc, None, fill, fields)
-    # Join all fields to raster
-    if not arcpy.Exists(in_ID): # If in_ID does not exist, it will be created as a raster
-        rst_ID = TransectsToContinuousRaster(in_fc, in_ID, cellsize_rst, IDfield)
-    elif 'Feature' in arcpy.Describe(in_ID).dataType:
-        rst_ID = TransectsToContinuousRaster(in_ID, 'rstID_'+in_ID, cellsize_rst, IDfield)
-    else: # assumes that in_ID is an existing raster file, which will be used as the base of out_rst
+    else:
+        fill_fc = in_fc
+    # Create/get ID raster (rst_ID)
+    if not arcpy.Exists(in_ID):
+        # If in_ID does not exist, it will be created as a raster from in_fc
+        #rst_ID = TransectsToContinuousRaster(in_trans=in_fc, out_rst=in_ID, cell_size=cell_size, IDfield=IDfield)
+        outEucAll = arcpy.sa.EucAllocation(in_fc, maximum_distance=50, cell_size=cell_size, source_field=IDfield)
+        outEucAll.save(in_ID)
         rst_ID = in_ID
-    arcpy.MakeTableView_management(in_fc, 'tableview')
-    # I tried running ReplaceValueInFC here, but I guess tableview is still linked to source FC
-    RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
-    arcpy.MakeRasterLayer_management(rst_ID, 'rst_lyr')
-    arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', IDfield)
-    arcpy.CopyRaster_management('rst_lyr', out_rst)
-    #JoinFCtoRaster(fill_fc, in_ID, out_rst,  IDfield) # will create raster of transect ID if not already present.
+    elif 'Feature' in arcpy.Describe(in_ID).dataType:
+        # if in_ID does exist and is vector
+        rst_ID = os.path.basename(in_ID)+'_IDrst'
+        #rst_ID = TransectsToContinuousRaster(in_trans=in_ID, out_rst=rst_ID, cell_size=cell_size, IDfield=IDfield)
+        outEucAll = arcpy.sa.EucAllocation(in_ID, maximum_distance=50, cell_size=cell_size, source_field=IDfield)
+        outEucAll.save(rst_ID)
+    else:
+        # if in_ID exists and its type is not 'Feature*', assume it is the ID raster
+        rst_ID = in_ID
+    # Join all fields to raster
+    JoinFCtoRaster(fill_fc, rst_ID, out_rst, IDfield)
     print('Raster {} created from {}.'.format(out_rst, in_fc))
     return fill_fc, out_rst
 
@@ -1020,3 +1037,46 @@ def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtran
     arcpy.env.workspace = home #reset workspace - XTools changes default workspace for some reason
     arcpy.FeatureToPoint_management(output, out_pts)
     return out_pts
+
+def CalculatePointDistances(transPts_presort, extendedTransects):
+    # Calculate distance of point from shoreline and dunes (Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
+    # Add xy for each segment center point
+    ReplaceFields(transPts_presort, {'seg_x': 'SHAPE@X', 'seg_y': 'SHAPE@Y'})
+    # clipped_trans must have transdistfields
+    transdistfields = ['DistDH', 'DistDL', 'DistArm', 'SL_x', 'SL_y', 'WidthPart']
+    missing_fields = fieldsAbsent(transPts_presort, transdistfields)
+    if missing_fields:
+        print("Input is missing required fields: {}. \nAttempting to retrieve from {}".format(missing_fields, extendedTransects))
+        arcpy.JoinField_management(transPts_presort, transUIDfield, extendedTransects, transUIDfield, missing_fields)
+    # Add fields whose values will be calculated
+    distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
+                  'DistSegDH', 'DistSegDL', 'DistSegArm']
+    AddNewFields(transPts_presort, distfields)
+    # Calculate Euclidean distances
+    with arcpy.da.UpdateCursor(transPts_presort, "*") as cursor:
+        for row in cursor:
+            flist = cursor.fields
+            try:
+                seg_x = row[flist.index('seg_x')]
+                SL_easting = row[flist.index('SL_x')]
+                seg_y = row[flist.index('seg_y')]
+                SL_northing = row[flist.index('SL_y')]
+                dist2mhw = hypot(seg_x - SL_easting, seg_y - SL_northing)
+                row[flist.index('Dist_Seg')] = dist2mhw
+                row[flist.index('Dist_MHWbay')] = row[flist.index('WidthPart')] - dist2mhw
+                try:
+                    row[flist.index('DistSegDH')] = dist2mhw-row[flist.index('DistDH')]
+                except TypeError:
+                    pass
+                try:
+                    row[flist.index('DistSegDL')] = dist2mhw-row[flist.index('DistDL')]
+                except TypeError:
+                    pass
+                try:
+                    row[flist.index('DistSegArm')] = dist2mhw-row[flist.index('DistArm')]
+                except TypeError:
+                    pass
+            except TypeError:
+                pass
+            cursor.updateRow(row)
+    return transPts_presort
