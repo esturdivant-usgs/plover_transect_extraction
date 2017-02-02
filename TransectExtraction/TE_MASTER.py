@@ -249,9 +249,9 @@ Requires: extended transects, extTrans_tidy
 '''
 # OUTPUT: raster version of populated transects (with fill values)
 print "Converting the transects to a raster: {}".format(rst_transPopulated)
-extT_fill, rst_transPop = FCtoRaster(extT_fill, rst_transID,
+extT_fill, rst_transPop = FCtoRaster(extendedTransects, rst_transID,
                                      rst_transPopulated, transUIDfield,
-                                     home, fill=False)
+                                     home, fill=fill)
 print "Saving the raster outside of the geodatabase: {}".format(out_dir)
 arcpy.CopyRaster_management(rst_transPop, os.path.join(out_dir, rst_trans_grid))
 
