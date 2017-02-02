@@ -86,7 +86,7 @@ if int(arcpy.GetCount_management(new_transects)[0]) > 0:
 arcpy.SelectLayerByLocation_management(old_transects, "INTERSECT", barrierBoundary)
 arcpy.Append_management(old_transects, new_transects)
 
-
+sort_line_list
 # Sort and add unique ID
 # Create field sort_ID and sort by that
 trans_presort = "Fisherman_transects_presort_utm"
@@ -129,7 +129,7 @@ extTransects = PreprocessTransects(site,old_transects,sort_corner='LL')
 
 # Experimental alternative:
 # Create lines to use to sort new transects
-arcpy.CreateFeatureclass_management(home,'sort_line1', "POLYLINE", spatial_reference=arcpy.SpatialReference(proj_code))
+arcpy.CreateFeatureclass_management(archive_dir,'sort_lines', "POLYLINE", spatial_reference=arcpy.SpatialReference(proj_code))
 arcpy.CopyFeatures_management('sort_line1','{}\\sort_line2'.format(home))
 sort_line_list = ['sort_line1','sort_line2']
 

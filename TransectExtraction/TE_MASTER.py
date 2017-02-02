@@ -20,7 +20,7 @@ import sys
 # path to TransectExtraction module
 sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction")
 from TransectExtraction import *
-from TE_config_FireIsland2010 import *
+from TE_config_BreezyPt2014 import *
 
 
 start = time.clock()
@@ -59,7 +59,7 @@ else:
 
 # BOUNDARY POLYGON
 if not bb_name:
-    rawbarrierline = DEMtoFullShorelinePoly(elevGrid, '{site}{year}'.format(**SiteYear_strings), MTL, MHW, inletLines, ShorelinePts)
+    rawbarrierline = DEMtoFullShorelinePoly(elevGrid, '{site}{year}'.format(**SYvars), MTL, MHW, inletLines, ShorelinePts)
     # Eliminate any remnant polygons on oceanside
     if pythonaddins.MessageBox('Ready to delete selected features from {}?'.format(rawbarrierline), '', 4) == 'Yes':
         arcpy.DeleteFeatures_management(rawbarrierline)
@@ -82,35 +82,58 @@ else:
 # Copy transects from archive directory
 if not e_trans:
     try:
-        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': orig_extTrans})
+        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;'\
+        'TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;'\
+        'Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;'\
+        'TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;'\
+        'LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;'\
+        'LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;'\
+        'LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;'\
+        'LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;'\
+        'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': orig_extTrans})
         arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, home, extendedTrans, field_mapping=fmap)
     except:
         et_orig = False
 if not t_trans:
     try:
-        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;BaselineID "BaselineID" true true false 4 Long 0 0 ,First,#,{source},BaselineID,-1,-1;TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;StartX "StartX" true true false 8 Double 0 0 ,First,#, {source}, StartX,-1,-1;StartY "StartY" true true false 8 Double 0 0 ,First,#, {source}, StartY,-1,-1;EndX "EndX" true true false 8 Double 0 0 ,First,#, {source}, EndX,-1,-1;EndY "EndY" true true false 8 Double 0 0 ,First,#, {source}, EndY,-1,-1;Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': orig_tidytrans})
+        fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;'\
+        'TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;'\
+        'Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;'\
+        'TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;'\
+        'LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;'\
+        'LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;'\
+        'LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;'\
+        'LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;'\
+        'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': orig_tidytrans})
         arcpy.FeatureClassToFeatureClass_conversion(orig_tidytrans, home, extTrans_tidy, field_mapping=fmap)
     except:
         tt_orig = False
 
 # Create extendedTrans, LT transects with gaps filled and lines extended
 # see TE_preprocessing.py
+
 if not e_trans:
+    # 1. Copy only the geometry of transects to use as material for filling gaps
+    arcpy.env.workspace = archive_dir
     trans_presort = 'trans_presort_temp'
-    CopyAndWipeFC(trans_orig, trans_presort)
+    CopyAndWipeFC(orig_extTrans, trans_presort)
     pythonaddins.MessageBox("Now we'll stop so you can copy existing groups of transects to fill in the gaps. If possible avoid overlapping transects", "Created {}. Proceed with manual processing.".format(trans_presort), 0)
     exit()
 # Delete any NAT transects in the new transects layer
 if not e_trans:
+    # 2. Remove orig transects from manually created transects
     arcpy.SelectLayerByLocation_management(trans_presort, "ARE_IDENTICAL_TO",  # or "SHARE_A_LINE_SEGMENT_WITH"
-                                           trans_orig)
+                                           orig_extTrans)
     if int(arcpy.GetCount_management(trans_presort)[0]):
         # if old trans in new trans, delete them
         arcpy.DeleteFeatures_management(trans_presort)
-    # Append relevant NAT transects to the new transects
-    arcpy.SelectLayerByLocation_management(trans_orig, "INTERSECT", barrierBoundary)
-    arcpy.Append_management(trans_orig, trans_presort)
-    pythonaddins.MessageBox("Now we'll stop so you can check that the transects are ready to be sorted either from the bottom up or top down. ", "Stop for manual processing.".format(trans_presort), 0)
+    # 3. Append relevant NAT transects to the new transects
+    arcpy.SelectLayerByLocation_management(orig_extTrans, "INTERSECT", barrierBoundary)
+    arcpy.Append_management(orig_extTrans, trans_presort)
+    # Create lines to use to sort new transects
+    sort_lines = 'sort_lines'
+    arcpy.CreateFeatureclass_management(archive_dir, sort_lines, "POLYLINE", spatial_reference=arcpy.SpatialReference(proj_code))
+    pythonaddins.MessageBox("Now we'll stop so you can check that the transects are ready to be sorted either from the bottom up or top down. If they need to be sorted in batches, add features to sort_lines.", "Stop for manual processing.".format(trans_presort), 0)
     exit()
 if not e_trans:
     # Sort
@@ -118,13 +141,13 @@ if not e_trans:
     extTrans_sort_ext = 'extTrans_temp'
     trans_sort_1, count1 = SpatialSort(trans_presort, trans_sort_1, "LR",
                                        reverse_order=False, sortfield="sort_ID")
+    SortTransectsFromSortLines(trans_presort, trans_sort_1, sort_line_list, sortfield='sort_ID',sort_corner='LL')
     # Extend
     ExtendLine(trans_sort_1, extTrans_sort_ext, extendlength, proj_code)
     if len(arcpy.ListFields(extTrans_sort_ext, 'OBJECTID*')) == 2:
-        ReplaceFields(trans_sort_ext, {'OBJECTID': 'OID@'})
+        ReplaceFields(extTrans_sort_ext, {'OBJECTID': 'OID@'})
     # Make sure transUIDfield counts from 1
     # Work with duplicate of original transects to preserve them
-    # - version for modification has the year added to the transect filename
     arcpy.Sort_management(extTrans_sort_ext, extendedTrans, transUIDfield)
     with arcpy.da.SearchCursor(extendedTrans, transUIDfield) as cursor:
         row = next(cursor)
@@ -139,7 +162,6 @@ if not e_trans:
 # TRANSECTS - extTrans_tidy
 if not t_trans:
     print("Manual work seems necessary to remove transect overlap")
-
     print("Select the boundary lines between groups of overlapping transects")
     # Select the boundary lines between groups of overlapping transects
     exit()
@@ -175,7 +197,7 @@ Requires DH, DL, and SHL points, NA transects
 --> elevGrid
 '''
 
-AddFeaturePositionsToTransects(in_trans=extendedTrans, out_fc=extendedTransects, inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts, 'shoreline': shoreline, 'armorLines': armorLines}, IDfield=transUIDfield, proj_code=proj_code, disttolerance=pt2trans_disttolerance, home=home, elevGrid_5m=elevGrid_5m)
+AddFeaturePositionsToTransects(in_trans=orig_extTrans, out_fc=extendedTransects, inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts, 'shoreline': shoreline, 'armorLines': armorLines}, IDfield=transUIDfield, proj_code=proj_code, disttolerance=pt2trans_disttolerance, home=home, elevGrid_5m=elevGrid_5m)
 
 '''___________________PART 2____________________________________________________
 Calculate distances (beach height, beach width, beach slope, max elevation)
@@ -188,6 +210,12 @@ DeleteTempFiles()
 print("Starting part 2 - Calculate beach geometry - Should be quick!")
 CalculateBeachDistances(extendedTransects, extendedTransects, maxDH, home, dMHW, oMLW,
                         MLWpts, CPpts, create_points=True, skip_field_check=False)
+# print "Converting the transects to a raster: {}".format(rst_transPopulated)
+# extT_fill, rst_transPop = FCtoRaster(extendedTransects, rst_transID,  # orig_tidytrans or rst_transID
+#                                      rst_transPopulated, transUIDfield,
+#                                      home, fill=fill)
+# print "Saving the raster outside of the geodatabase: {}".format(os.path.join(out_dir, rst_trans_grid))
+# arcpy.CopyRaster_management(rst_transPop, os.path.join(out_dir, rst_trans_grid))
 
 '''_________________PART 3_____________________________________________________
 Dist2Inlet: Calc dist from inlets
@@ -219,18 +247,12 @@ Output populated transects as: extendedTransects, extTrans_tidy, rst_transPopula
 Requires: extended transects, extTrans_tidy
 --> extended
 '''
-
-# OUTPUT: extTrans_tidy fully populated
-# Join the new fields from extendedTransects to extTrans_tidy
-# arcpy.DeleteField_management(extTrans_tidy, transect_fields)  # if reprocessing
-# arcpy.JoinField_management(extTrans_tidy, transUIDfield, extendedTransects,
-#                            transUIDfield, transect_fields)
-# print("Final population of {} complete.".format(extTrans_tidy))
-
 # OUTPUT: raster version of populated transects (with fill values)
-extT_fill, rst_transPop = FCtoRaster(extendedTransects, rst_transID,  # orig_tidytrans or rst_transID
+print "Converting the transects to a raster: {}".format(rst_transPopulated)
+extT_fill, rst_transPop = FCtoRaster(extT_fill, rst_transID,
                                      rst_transPopulated, transUIDfield,
-                                     home, fill=fill)
+                                     home, fill=False)
+print "Saving the raster outside of the geodatabase: {}".format(out_dir)
 arcpy.CopyRaster_management(rst_transPop, os.path.join(out_dir, rst_trans_grid))
 
 # Remove temp files

@@ -135,14 +135,28 @@ def RemoveLayerFromMXD(lyrname):
         return False
 
 def newcoord(coords, dist):
-    # Computes new coordinates x3,y3 at a specified distance along the prolongation of the line from x1,y1 to x2,y2
+    # From: gis.stackexchange.com/questions/71645/extending-line-by-specified-distance-in-arcgis-for-desktop
+    # Computes new coordinates x3,y3 at a specified distance along the
+    # prolongation of the line from x1,y1 to x2,y2
     (x1,y1),(x2,y2) = coords
     dx = x2 - x1 # change in x
     dy = y2 - y1 # change in y
     linelen = hypot(dx, dy) # distance between xy1 and xy2
     x3 = x2 + dx/linelen * dist
     y3 = y2 + dy/linelen * dist
-    return x3, y3, linelen
+    return x3, y3
+
+#Computes new coordinates x3,y3 at a specified distance
+#along the prolongation of the line from x1,y1 to x2,y2
+def newcoord(coords, dist):
+    (x1,y1),(x2,y2) = coords
+    dx = x2 - x1
+    dy = y2 - y1
+    linelen = hypot(dx, dy)
+
+    x3 = x2 + dx/linelen * dist
+    y3 = y2 + dy/linelen * dist
+    return x3, y3
 
 def ReplaceFields(fc,newoldfields,fieldtype='DOUBLE'):
     # Use tokens to save geometry properties as attributes
@@ -163,7 +177,7 @@ def ReplaceFields(fc,newoldfields,fieldtype='DOUBLE'):
                 pass
     return fc
 
-def AddXYAttributes(fc,newfc,prefix,proj_code=26918):
+def AddXYAttributes(fc, newfc, prefix, proj_code=26918):
     try:
         try:
             RemoveLayerFromMXD(fc)
@@ -178,19 +192,11 @@ def AddXYAttributes(fc,newfc,prefix,proj_code=26918):
         pass
     fieldlist = [prefix+'_Lat',prefix+'_Lon',prefix+'_x',prefix+'_y']
     AddNewFields(newfc, fieldlist)
-    with arcpy.da.UpdateCursor(newfc,[prefix+'_Lon',prefix+'_Lat',"SHAPE@XY"],spatial_reference=arcpy.SpatialReference(4269)) as cursor:
-        for row in cursor:
-            x,y = row[cursor.fields.index("SHAPE@XY")]
-            row[cursor.fields.index(prefix+'_Lon')] = x
-            row[cursor.fields.index(prefix+'_Lat')] = y
-            cursor.updateRow(row)
-    with arcpy.da.UpdateCursor(newfc,[prefix+'_x',prefix+'_y',"SHAPE@XY"],spatial_reference=arcpy.SpatialReference(proj_code)) as cursor:
-        for row in cursor:
-            x,y = row[cursor.fields.index("SHAPE@XY")]
-            row[cursor.fields.index(prefix+'_x')] = x
-            row[cursor.fields.index(prefix+'_y')] = y
-            cursor.updateRow(row)
-    return newfc
+    with arcpy.da.UpdateCursor(newfc, [prefix+'_Lon', prefix+'_Lat',"SHAPE@XY"], spatial_reference=arcpy.SpatialReference(4269)) as cursor:
+        [cursor.updateRow([row[2][0], row[2][1], row[2]]) for row in cursor]
+    with arcpy.da.UpdateCursor(newfc,[prefix+'_x',prefix+'_y',"SHAPE@XY"], spatial_reference=arcpy.SpatialReference(proj_code)) as cursor:
+        [cursor.updateRow([row[2][0], row[2][1], row[2]]) for row in cursor]
+    return newfc, fieldlist
 
 def ReplaceValueInFC(fc,oldvalue=9999,newvalue=None, fields="*"):
     # Replace oldvalue with newvalue in fields in fc
@@ -255,11 +261,12 @@ def ProcessDEM(elevGrid, elevGrid_5m, utmSR):
     outAggreg = arcpy.sa.Aggregate(elevGrid2,5,'MEAN')
     outAggreg.save(elevGrid_5m)
 
-def ExtendLine(fc,new_fc,distance,proj_code=26918):
+def ExtendLine(fc, new_fc, distance, proj_code=26918):
     # From GIS stack exchange http://gis.stackexchange.com/questions/71645/a-tool-or-way-to-extend-line-by-specified-distance
     # layer must have map projection
     def accumulate(iterable):
-        # accumulate([1,2,3,4,5]) --> 1 3 6 10 15 (Equivalent to itertools.accumulate() which isn't present in Python 2.7)
+        # accumulate([1,2,3,4,5]) --> 1 3 6 10 15
+        # (Equivalent to itertools.accumulate() - isn't in Python 2.7)
         it = iter(iterable)
         total = next(it)
         yield total
@@ -272,18 +279,20 @@ def ExtendLine(fc,new_fc,distance,proj_code=26918):
         arcpy.Project_management(fc, new_fc, arcpy.SpatialReference(proj_code))  # project to GCS
     else:
         print '{} is already projected in UTM.'.format(fc)
-        arcpy.FeatureClassToFeatureClass_conversion(fc,arcpy.env.workspace,new_fc)
-    # Will use OID to determine how to break up flat list of data by feature.
-    coordinates = [[row[0], row[1]] for row in arcpy.da.SearchCursor(new_fc, ["OID@", "SHAPE@XY"], explode_to_points=True)]
-    oid,vert = zip(*coordinates)
-    # Construct list of numbers that mark the start of a new feature class by counting OIDs and accumulating the values.
+        arcpy.FeatureClassToFeatureClass_conversion(fc, arcpy.env.workspace,new_fc)
+    #OID is needed to determine how to break up flat list of data by feature.
+    coordinates = [[row[0], row[1]] for row in
+                   arcpy.da.SearchCursor(fc, ["OID@", "SHAPE@XY"],
+                   explode_to_points=True)]
+    oid, vert = zip(*coordinates)
+    # Construct list of numbers that mark the start of a new feature class by
+    # counting OIDs and accumulating the values.
     vertcounts = list(accumulate(collections.Counter(oid).values()))
-    #Grab the last two vertices of each feature
+    # Grab the last two vertices of each feature
     lastpoint = [point for x,point in enumerate(vert) if x+1 in vertcounts or x+2 in vertcounts]
-    # Obtain list of tuples of new end coordinates by converting flat list of tuples to list of lists of tuples.
-    distance = float(distance)
-    nx, ny, dist = [newcoord(y, distance) for y in zip(*[iter(lastpoint)]*2)]
-    newvert = (nx, ny)
+    # Obtain list of tuples of new end coordinates by converting flat list of
+    # tuples to list of lists of tuples.
+    newvert = [newcoord(y, float(distance)) for y in zip(*[iter(lastpoint)]*2)]
     j = 0
     with arcpy.da.UpdateCursor(new_fc, "SHAPE@XY", explode_to_points=True) as cursor:
         for i,row in enumerate(cursor):
@@ -293,7 +302,7 @@ def ExtendLine(fc,new_fc,distance,proj_code=26918):
                 cursor.updateRow(row)
     return new_fc
 
-def SpatialSort(in_fc,out_fc,sort_corner='LL',reverse_order=False, startcount=0, sortfield='sort_ID'):
+def SpatialSort(in_fc, out_fc, sort_corner='LL', reverse_order=False, startcount=0, sortfield='sort_ID'):
     arcpy.Sort_management(in_fc,out_fc,[['Shape','ASCENDING']],sort_corner) # Sort from lower left - this
     try:
         arcpy.AddField_management(out_fc,sortfield,'SHORT')
@@ -321,7 +330,9 @@ def SpatialSort_v1(in_fc,out_fc,sort_corner='LL',sortfield='sort_ID'):
             cursor.updateRow([row[0],row[0]])
     return out_fc
 
-def SortTransectsFromSortLines(in_fc, base_fc, sort_line_list, sortfield='trans_sort',sort_corner='LL'):
+def SortTransectsFromSortLines(in_fc, base_fc, sort_line_list, sortfield='sort_ID',sort_corner='LL'):
+    # in_fc = transects to be sorted
+    # base_fc =
     try:
         arcpy.AddField_management(in_fc,sortfield,'SHORT')
     except:
@@ -344,6 +355,7 @@ def SortTransectsFromSortLines(in_fc, base_fc, sort_line_list, sortfield='trans_
                 ct+=1
                 cursor.updateRow([row[0],row[0]+new_ct])
         arcpy.Append_management(out_fc,base_fc)
+    return base_fc
 
 def PreprocessTransects(site,old_transects=False,sort_corner='LL',sortfield='sort_ID',distance=3000):
     # In copy of transects feature class, create and populate sort field (sort_ID), and extend transects
@@ -421,7 +433,7 @@ def CreateShoreBetweenInlets_v1(SLdelineator,inletLines,out_line,proj_code=26918
     ReplaceFields(SLdelineator,{'ORIG_FID':'OID@'},'SHORT')
     return out_line
 
-def RasterToLandPerimeter(in_raster,out_polygon,threshold,agg_dist='30 METERS',min_area='300 SquareMeters',min_hole_sz='300 SquareMeters',manualadditions=None):
+def RasterToLandPerimeter(in_raster, out_polygon, threshold, agg_dist='30 METERS', min_area='300 SquareMeters', min_hole_sz='300 SquareMeters', manualadditions=None):
     """ Raster to Polygon: DEM => Reclass => MHW line """
     home = arcpy.env.workspace
     r2p = os.path.join(home, out_polygon+'_r2p_temp')
@@ -438,7 +450,7 @@ def RasterToLandPerimeter(in_raster,out_polygon,threshold,agg_dist='30 METERS',m
         arcpy.AggregatePolygons_cartography(r2p, out_polygon, agg_dist, min_area, min_hole_sz)
     return out_polygon
 
-def CombineShorelinePolygons(bndMTL,bndMHW,inletLines,ShorelinePts,bndpoly):
+def CombineShorelinePolygons(bndMTL, bndMHW, inletLines, ShorelinePts, bndpoly):
     union = 'union_temp'
     split_temp = 'split_temp'
     union_2 = 'union_2_temp'
@@ -471,7 +483,7 @@ def DEMtoFullShorelinePoly(elevGrid,prefix,MTL,MHW,inletLines,ShorelinePts):
     #DeleteTempFiles()
     return bndpoly
 
-def NewBNDpoly(old_boundary,modifying_feature,new_bndpoly='boundary_poly',vertexdist='25 METERS',snapdist='25 METERS'):
+def NewBNDpoly(old_boundary, modifying_feature, new_bndpoly='boundary_poly', vertexdist='25 METERS', snapdist='25 METERS'):
     # boundary = input line or polygon of boundary to be modified by newline
     typeFC = arcpy.Describe(old_boundary).shapeType
     if typeFC == "Line" or typeFC =='Polyline':
@@ -489,25 +501,7 @@ def NewBNDpoly(old_boundary,modifying_feature,new_bndpoly='boundary_poly',vertex
     #arcpy.Densify_edit(modifying_feature,'DISTANCE',vertexdist)
     arcpy.Snap_edit(new_bndpoly,[[modifying_feature,'VERTEX',snapdist]]) # Takes a while
     return new_bndpoly # string name of new polygon
-"""
-def JoinMetricsToTransects(transects,tempfile,fieldnamesdict):
-    # Add fields from tempfile to transects
-    for new in fieldnamesdict.keys():
-        if fieldExists(transects,new):
-            try:
-                arcpy.DeleteField_management(transects,new)
-            except:
-                pass
-    arcpy.JoinField_management(transects, "OBJECTID", tempfile, "FID_"+transects, fieldnamesdict.values())
-    # Rename new fields
-    for (new,old) in fieldnamesdict.items():
-        try:
-            arcpy.AlterField_management(transects,old,new,new)
-        except:
-            pass
-    arcpy.Delete_management(os.path.join(home,tempfile))
-    return transects
-"""
+
 def JoinFields(targetfc, sourcefile, dest2src_fields, joinfields=['sort_ID']):
     # Add fields from sourcefile to targetfc; alter
     # If dest2src_fields is a list/tuple instead of dictionary, convert.
@@ -565,20 +559,22 @@ def JoinFields(targetfc, sourcefile, dest2src_fields, joinfields=['sort_ID']):
     return targetfc
 
 def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, pt2trans_disttolerance):
-    shl2trans = 'SHL2trans'
-    shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
+    # shl2trans = 'SHL2trans'
+    # shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
     shoreline = inPtsDict['shoreline']
     ShorelinePts = inPtsDict['ShorelinePts']
-    arcpy.Intersect_analysis((shoreline,extendedTransects), shl2trans+'_temp', output_type='POINT')
-    AddXYAttributes(fc=shl2trans+'_temp',newfc=shl2trans,prefix='SL',proj_code=proj_code) # Add lat lon and x y fields to create SHL2trans
+    arcpy.Intersect_analysis((shoreline,extendedTransects), 'SHL2trans_temp', output_type='POINT')
+    shl2trans, shlfields = AddXYAttributes('SHL2trans_temp', 'SHL2trans', 'SL', proj_code)
+    shlfields.append('Bslope')
+    # Add lat lon and x y fields to create SHL2trans
     # Add slope from ShorelinePts to shoreline intersection with transects (which replace the XY values from the original shoreline points)
     ReplaceFields(inPtsDict['ShorelinePts'],{'ID':'OID@'},'SINGLE')
     arcpy.SpatialJoin_analysis(shl2trans,inPtsDict['ShorelinePts'], 'join_temp','#','#','#',"CLOSEST",pt2trans_disttolerance) # create join_temp
     arcpy.JoinField_management(shl2trans,IDfield,'join_temp',IDfield,'slope') # join slope from join_temp (from ShorelinePts) with SHL2trans points
     arcpy.DeleteField_management(shl2trans,'Bslope') #In case of reprocessing
     arcpy.AlterField_management(shl2trans,'slope','Bslope','Bslope')
-    arcpy.DeleteField_management(extendedTransects,shlfields) #In case of reprocessing
-    arcpy.JoinField_management(extendedTransects,IDfield,shl2trans,IDfield,shlfields)
+    arcpy.DeleteField_management(extendedTransects, shlfields) #In case of reprocessing
+    arcpy.JoinField_management(extendedTransects, IDfield, shl2trans, IDfield, shlfields)
     return extendedTransects
 
 def ArmorLineToTransects(in_trans, armorLines, IDfield, proj_code, elevGrid_5m):
@@ -588,7 +584,8 @@ def ArmorLineToTransects(in_trans, armorLines, IDfield, proj_code, elevGrid_5m):
         tempfile = arm2trans+"_temp"
         DeleteExtraFields(armorLines)
         arcpy.Intersect_analysis((armorLines, in_trans), tempfile, output_type='POINT')
-        AddXYAttributes(tempfile, arm2trans,'Arm',proj_code)
+        arm2trans, armorfields = AddXYAttributes(tempfile, arm2trans, 'Arm', proj_code)
+        armorfields.append('Arm_z')
         AddNewFields(arm2trans, 'Arm_z', fieldtype="DOUBLE")
         # Get elevation at points
         print('Getting elevation of beach armoring by extracting elevation values to arm2trans points.')
@@ -596,8 +593,9 @@ def ArmorLineToTransects(in_trans, armorLines, IDfield, proj_code, elevGrid_5m):
         with arcpy.da.UpdateCursor(arm2trans, ['Arm_z','z_tmp']) as cursor:
             for row in cursor:
                 cursor.updateRow([row[1], row[1]])
+    else:
+        armorfields = ['Arm_Lon','Arm_Lat','Arm_x','Arm_y','Arm_z']
     # Join
-    armorfields = ['Arm_Lon','Arm_Lat','Arm_x','Arm_y','Arm_z']
     arcpy.DeleteField_management(in_trans, armorfields) #In case of reprocessing
     arcpy.JoinField_management(in_trans, IDfield, arm2trans, IDfield, armorfields)
     # How do I know which point will be encountered first? - don't want those in back to take the place of
@@ -778,7 +776,7 @@ def CalcBeachWidth_MLW(oMLW, duneXY, b_slope, shoreXY):
         MLWdist = abs(oMLW/b_slope) # 1/17: ADDED abs()
         #print('MLWdist - Distance between MHW and MLW: {}'.format(MLWdist))
         # Find coordinates of MLW based on transect azimuth and MLWdist
-        mlw_x, mlw_y, bw_mhw = newcoord([duneXY, shoreXY], MLWdist)
+        mlw_x, mlw_y = newcoord([duneXY, shoreXY], MLWdist)
         #print('bw_mhw - Distance between dune and MHW: {}'.format(bw_mhw))
         # 6 Calculate beach width = Euclidean distance from dune to MLW
         bw_mlw = hypot(mlw_x - d_x, mlw_y - d_y)
@@ -805,7 +803,8 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, MLWpts, C
     if not skip_field_check:
         missing_fields = fieldsAbsent(in_trans, in_fields)
         if missing_fields:
-            print("Fieldd '{}' not present in transects file '{}'. We recommend running AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)".format(missing_fields, in_trans))
+            print("Field '{}' not present in transects file '{}'. We recommend running AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)".format(missing_fields, in_trans))
+            raise Exception
             return False
     # Copy in_trans to out_fc if the output will be different than the input
     if not in_trans == out_fc:
@@ -1020,11 +1019,10 @@ def TransectsToContinuousRaster(in_trans, out_rst, cell_size, IDfield='sort_ID')
     outEucAll.save(out_rst)
     return out_rst
 
-
 def JoinFCtoRaster(in_tbl, rst_ID, out_rst, IDfield='sort_ID'):
     # Join fields from in_tbl to rst_ID to create new out_rst
-    arcpy.MakeTableView_management(in_tbl, 'tableview')
     RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
+    arcpy.MakeTableView_management(in_tbl, 'tableview')
     arcpy.MakeRasterLayer_management(rst_ID, 'rst_lyr')
     arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', IDfield)
     arcpy.CopyRaster_management('rst_lyr', out_rst)
@@ -1045,22 +1043,26 @@ def FCtoRaster(in_fc, in_ID, out_rst, IDfield, home, fill=False, cell_size=5):
         ReplaceValueInFC(fill_fc, None, fill, fields)
     else:
         fill_fc = in_fc
+
     # Create/get ID raster (rst_ID)
     if not arcpy.Exists(in_ID):
+        print('{} (in_ID) does not exist. Creating raster from {}.'.format(in_ID, in_fc))
         # If in_ID does not exist, it will be created as a raster from in_fc
         #rst_ID = TransectsToContinuousRaster(in_trans=in_fc, out_rst=in_ID, cell_size=cell_size, IDfield=IDfield)
         outEucAll = arcpy.sa.EucAllocation(in_fc, maximum_distance=50, cell_size=cell_size, source_field=IDfield)
         outEucAll.save(in_ID)
         rst_ID = in_ID
     elif 'Feature' in arcpy.Describe(in_ID).dataType:
+        print('{} (in_ID) is vector. Creating raster.'.format(in_ID))
         # if in_ID does exist and is vector
         rst_ID = os.path.basename(in_ID)+'_IDrst'
         #rst_ID = TransectsToContinuousRaster(in_trans=in_ID, out_rst=rst_ID, cell_size=cell_size, IDfield=IDfield)
         outEucAll = arcpy.sa.EucAllocation(in_ID, maximum_distance=50, cell_size=cell_size, source_field=IDfield)
         outEucAll.save(rst_ID)
-    else:
-        # if in_ID exists and its type is not 'Feature*', assume it is the ID raster
+    else:  # if in_ID exists and is not vector, assume it is the ID raster
+        print('Using {} (in_ID) as ID raster.'.format(in_ID))
         rst_ID = in_ID
+
     # Join all fields to raster
     JoinFCtoRaster(fill_fc, rst_ID, out_rst, IDfield)
     print('Raster {} created from {}.'.format(out_rst, in_fc))
