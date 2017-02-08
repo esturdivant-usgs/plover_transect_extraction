@@ -123,3 +123,5 @@ transPt_fields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
     'DistSegDH', 'DistSegDL', 'DistSegArm',
     'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
     'MAX_ptZmhw', 'MEAN_ptZmhw']
+
+########### Field names ##########################

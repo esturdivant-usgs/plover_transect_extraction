@@ -115,7 +115,10 @@ def DeleteExtraFields(inTable, keepfields=[]):
     return inTable
 
 def DeleteTempFiles(wildcard='*_temp'):
+    # Delete files of type FC, Dataset, or Table ending in '_temp' fromw workspace
     templist = arcpy.ListFeatureClasses(wildcard)
+    templist = templist + arcpy.ListDatasets(wildcard)
+    templist = templist + arcpy.ListTables(wildcard)
     for tempfile in templist:
         arcpy.Delete_management(tempfile)
     return templist
@@ -1085,7 +1088,7 @@ def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtran
     arcpy.FeatureToPoint_management(output, out_pts)
     return out_pts
 
-def CalculatePointDistances(transPts_presort, extendedTransects):
+def CalculatePointDistances(transPts_presort, extendedTransects='extendedTransects, which is not provided'):
     # Calculate distance of point from shoreline and dunes (Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
     # Add xy for each segment center point
     ReplaceFields(transPts_presort, {'seg_x': 'SHAPE@X', 'seg_y': 'SHAPE@Y'})

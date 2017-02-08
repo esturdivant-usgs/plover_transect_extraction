@@ -29,7 +29,10 @@ rawtransects = False
 plover_rst_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\Zeigler_analysis\Layers_for_BN\{year}\BaseLayers'.format(
     **SiteYear_strings)
 arcpy.env.workspace = plover_rst_dir
-cellsize_rst = os.path.join(plover_rst_dir, arcpy.ListRasters()[0])
+try:
+    cellsize_rst = os.path.join(plover_rst_dir, arcpy.ListRasters()[0])
+except:
+    cellsize_rst = 5
 
 ########### Automatic population ###########
 arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format( **SiteYear_strings)
@@ -52,7 +55,7 @@ dlPts = '{site}{year}_DLpts'.format(**SiteYear_strings) 		  # Dune toe
 MHW_oceanside = "{site}{year}_MHWfromSLPs".format(**SiteYear_strings)
 inletLines = '{site}{year}_inletLines'.format(**SiteYear_strings) # manually create lines based on the boundary polygon that correspond to end of land and cross the MHW line
 armorLines = '{site}{year}_armor'.format(**SiteYear_strings)
-barrierBoundary = '{site}{year}_bndpoly_2sl'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
+barrierBoundary = '{site}{year}_bndpoly_2sl_edited'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
 elevGrid = '{site}{year}_DEM'.format(**SiteYear_strings)				# Elevation
 elevGrid_5m = elevGrid+'_5m'				# Elevation
 #habitat = 'habitat_201211' 			# Habitat
