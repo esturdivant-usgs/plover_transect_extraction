@@ -182,10 +182,8 @@ if missing_fields:
 # Split transects into points
 SplitTransectsToPoints(extTrans_tidy, transPts_presort, barrierBoundary,
                        home, clippedtrans='trans_clipped2island')
-
-# Calculate Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
+# Calculate DistSeg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
 CalculatePointDistances(transPts_presort, extendedTransects)
-
 # Sort on transUIDfield and DistSeg (id_temp)
 RemoveLayerFromMXD(transPts_presort)
 arcpy.Sort_management(transPts_presort, transPts, [[transUIDfield,
@@ -197,11 +195,11 @@ arcpy.DeleteField_management(transPts, ["StartX", "StartY", "ORIG_FID"])
 DeleteTempFiles()
 
 # Report time
-endPart5 = time.clock()
-duration = endPart5 - startPart5
-hours, remainder = divmod(duration, 3600)
-minutes, seconds = divmod(remainder, 60)
-print "Part 5 completed in %dh:%dm:%fs" % (hours, minutes, seconds)
+# endPart5 = time.clock()
+# duration = endPart5 - startPart5
+# hours, remainder = divmod(duration, 3600)
+# minutes, seconds = divmod(remainder, 60)
+# print "Part 5 completed in %dh:%dm:%fs" % (hours, minutes, seconds)
 
 '''____________________________________________________________________________
 
@@ -270,7 +268,7 @@ with arcpy.da.UpdateCursor(out_stats, ['*']) as cursor:
 
 # add mean and max fields to points FC using JoinField_management
 arcpy.JoinField_management(transPts, transUIDfield, out_stats, transUIDfield,
-                           ['MAX_ptZmhw', 'MEAN_ptZmhw'])  # very slow ~1 hr
+                           ['MAX_ptZmhw', 'MEAN_ptZmhw'])  # very slow: over 1 hr (Forsythe: 1:53)
 arcpy.JoinField_management(extendedTransects, transUIDfield, out_stats,
                            transUIDfield, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
 

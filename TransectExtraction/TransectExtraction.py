@@ -65,13 +65,13 @@ def fieldsAbsent(in_fc, fieldnames):
     else:
         return mfields
 
-def fieldExists(inFeatureClass, inFieldName):
+def fieldExists(in_fc, fieldname):
     try:
-        fieldList = arcpy.ListFields(os.path.join(arcpy.env.workspace,inFeatureClass))
+        fieldList = arcpy.ListFields(os.path.join(arcpy.env.workspace, in_fc))
     except:
-        fieldList = arcpy.ListFields(inFeatureClass)
-    for iField in fieldList:
-        if iField.name.lower() == inFieldName.lower():
+        fieldList = arcpy.ListFields(in_fc)
+    for f in fieldList:
+        if f.name.lower() == fieldname.lower():
             return True
     return False
 
@@ -161,18 +161,18 @@ def newcoord(coords, dist):
     y3 = y2 + dy/linelen * dist
     return x3, y3
 
-def ReplaceFields(fc,newoldfields,fieldtype='DOUBLE'):
+def ReplaceFields(fc, newoldfields, fieldtype='DOUBLE'):
     # Use tokens to save geometry properties as attributes
     # E.g. newoldfields={'LENGTH':'SHAPE@LENGTH'}
     spatial_ref = arcpy.Describe(fc).spatialReference
     for (new, old) in newoldfields.items():
-        if not fieldExists(fc,new):
-            #arcpy.DeleteField_management(fc,new)
-            arcpy.AddField_management(fc,new,fieldtype)
-        with arcpy.da.UpdateCursor(fc,[new, old], spatial_reference=spatial_ref) as cursor:
+        if not fieldExists(fc, new):
+            arcpy.DeleteField_management(fc, new)
+            arcpy.AddField_management(fc, new, fieldtype)
+        with arcpy.da.UpdateCursor(fc, [new, old], spatial_reference=spatial_ref) as cursor:
             for row in cursor:
                 cursor.updateRow([row[1], row[1]])
-        if fieldExists(fc,old):
+        if fieldExists(fc, old):
             try:
                 arcpy.DeleteField_management(fc,old)
             except:
@@ -201,7 +201,7 @@ def AddXYAttributes(fc, newfc, prefix, proj_code=26918):
         [cursor.updateRow([row[2][0], row[2][1], row[2]]) for row in cursor]
     return newfc, fieldlist
 
-def ReplaceValueInFC(fc,oldvalue=9999,newvalue=None, fields="*"):
+def ReplaceValueInFC(fc, oldvalue=-99999, newvalue=None, fields="*"):
     # Replace oldvalue with newvalue in fields in fc
     with arcpy.da.UpdateCursor(fc, fields) as cursor:
         fieldindex = range(len(cursor.fields))
@@ -213,8 +213,8 @@ def ReplaceValueInFC(fc,oldvalue=9999,newvalue=None, fields="*"):
             # try:
             #     cursor.updateRow(row)
             # except RuntimeError:
-            #     print(cursor.fields[i])
-            #     print(row)
+            #     #print(cursor.fields[i])
+            #     #print(row)
     return fc
 
 def ReplaceValueInFC_v1(fc,fields=[],oldvalue=-99999,newvalue=None):
@@ -1113,20 +1113,27 @@ def CalculatePointDistances(transPts_presort, extendedTransects='extendedTransec
                 SL_northing = row[flist.index('SL_y')]
                 dist2mhw = hypot(seg_x - SL_easting, seg_y - SL_northing)
                 row[flist.index('Dist_Seg')] = dist2mhw
-                row[flist.index('Dist_MHWbay')] = row[flist.index('WidthPart')] - dist2mhw
                 try:
-                    row[flist.index('DistSegDH')] = dist2mhw-row[flist.index('DistDH')]
+                    row[flist.index('Dist_MHWbay')] = row[flist.index('WidthPart')] - dist2mhw
                 except TypeError:
                     pass
                 try:
-                    row[flist.index('DistSegDL')] = dist2mhw-row[flist.index('DistDL')]
+                    row[flist.index('DistSegDH')] = dist2mhw - row[flist.index('DistDH')]
                 except TypeError:
                     pass
                 try:
-                    row[flist.index('DistSegArm')] = dist2mhw-row[flist.index('DistArm')]
+                    row[flist.index('DistSegDL')] = dist2mhw - row[flist.index('DistDL')]
+                except TypeError:
+                    pass
+                try:
+                    row[flist.index('DistSegArm')] = dist2mhw - row[flist.index('DistArm')]
                 except TypeError:
                     pass
             except TypeError:
                 pass
-            cursor.updateRow(row)
+            try:
+                cursor.updateRow(row)
+            except RuntimeError as err:
+                print(err)
+                pass
     return transPts_presort
