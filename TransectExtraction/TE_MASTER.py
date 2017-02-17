@@ -20,7 +20,7 @@ import sys
 # path to TransectExtraction module
 sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction")
 from TransectExtraction import *
-from TE_config_Forsythe2010 import *
+from TE_config_Forsythe2012 import *
 
 
 start = time.clock()
@@ -146,7 +146,7 @@ Requires: extended transects, boundary polygon
 '''
 DeleteTempFiles()
 print "Starting Part 4 - Get barrier widths and output transects"
-GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, IDfield=transUIDfield)
+GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, IDfield=transUIDfield, out_clipped_trans='trans_clipped2island')
 
 '''___________________OUTPUT TRANSECTS_________________________________________
 Output populated transects as: extendedTransects, extTrans_tidy, rst_transPopulated
@@ -241,14 +241,19 @@ else:
                 pass
             cursor.updateRow(row)
     # Save pts with elevation and slope to archived file
-    fieldlist = ['SplitSort', 'ptZ', 'ptSlp', 'ptZmhw']
-    fmaps = arcpy.FieldMappings()
-    for f in fieldlist:
-        fm = arcpy.FieldMap()
-        fm.addInputField(transPts, f)
-        fmaps.addFieldMap(fm)
+    fmaps = 'SplitSort "SplitSort" true true false 8 Double 0 0 , First, #, {source}, SplitSort,-1,-1;'\
+            'ptZ "ptZ" true true false 4 Float 0 0 ,First,#, {source}, ptZ,-1,-1;'\
+            'ptSlp "ptSlp" true true false 4 Float 0 0 ,First,#, {source}, ptSlp,-1,-1;'\
+            'ptZmhw "ptZmhw" true true false 8 Double 0 0 ,First,#, {source}, ptZmhw,-1,-1;'\
+            'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': transPts})
+    # fieldlist = ['SplitSort', 'ptZ', 'ptSlp', 'ptZmhw']
+    # fmaps = arcpy.FieldMappings()
+    # for f in fieldlist:
+    #     fm = arcpy.FieldMap()
+    #     fm.addInputField(transPts, f)
+    #     fmaps.addFieldMap(fm)
     arcpy.FeatureClassToFeatureClass_conversion(transPts, home, pts_elevslope,
-                                                field_mapping=fmaps)
+                                                 field_mapping=fmaps)
 
 """
 # Get max_Z and mean_Z for each transect
@@ -269,7 +274,11 @@ with arcpy.da.UpdateCursor(out_stats, ['*']) as cursor:
 # add mean and max fields to points FC using JoinField_management
 arcpy.JoinField_management(transPts, transUIDfield, out_stats, transUIDfield,
                            ['MAX_ptZmhw', 'MEAN_ptZmhw'])  # very slow: over 1 hr (Forsythe: 1:53)
-arcpy.JoinField_management(extendedTransects, transUIDfield, out_stats,
+try:
+    arcpy.JoinField_management(extendedTransects, transUIDfield, out_stats,
+                           transUIDfield, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
+except:
+    arcpy.JoinField_management(extendedTransects, transUIDfield, transPts,
                            transUIDfield, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
 
 '''______________________PART 7________________________________________________

@@ -971,7 +971,7 @@ def Dist2Inlet(transects, in_line, IDfield='sort_ID', xpts='xpts_temp', two_dire
     print "Dist2Inlet() completed in %dh:%dm:%fs" % (hours, minutes, seconds)
     return transects
 
-def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', clipped_trans='trans_clipped2island_temp'):
+def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', out_clipped_trans='trans_clipped2island_temp'):
     """
     Island width - total land (WidthLand), farthest sides (WidthFull), and segment (WidthPart)
     """
@@ -982,35 +982,35 @@ def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', cl
     #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH")
     # find farthest point to sl_x, sl_y => WidthFull and closest point => WidthPart
     # Clip transects with boundary polygon
-    arcpy.Clip_analysis(in_trans, barrierBoundary, clipped_trans) # ~30 seconds
+    arcpy.Clip_analysis(in_trans, barrierBoundary, out_clipped_trans) # ~30 seconds
     # WidthLand
-    ReplaceFields(clipped_trans,{'WidthLand':'SHAPE@LENGTH'})
+    ReplaceFields(out_clipped_trans,{'WidthLand':'SHAPE@LENGTH'})
     # WidthFull
     #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
     # Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
-    arcpy.FeatureVerticesToPoints_management(clipped_trans, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
+    arcpy.FeatureVerticesToPoints_management(out_clipped_trans, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
     arcpy.PointsToLine_management("verts_temp","trans_temp",IDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
     arcpy.SimplifyLine_cartography("trans_temp", "length_temp","POINT_REMOVE",".01","FLAG_ERRORS","NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
     ReplaceFields("length_temp",{'WidthFull':'SHAPE@LENGTH'})
     # Join clipped transects with full barrier lines and transfer width value
-    arcpy.JoinField_management(clipped_trans, IDfield, "length_temp", IDfield, "WidthFull")
+    arcpy.JoinField_management(out_clipped_trans, IDfield, "length_temp", IDfield, "WidthFull")
 
     # Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
-    arcpy.MultipartToSinglepart_management(clipped_trans,'singlepart_temp')
+    arcpy.MultipartToSinglepart_management(out_clipped_trans,'singlepart_temp')
     ReplaceFields("singlepart_temp", {'WidthPart': 'SHAPE@LENGTH'})
     arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
-    arcpy.JoinField_management(clipped_trans, IDfield, "singlepart_temp", IDfield, "WidthPart")
+    arcpy.JoinField_management(out_clipped_trans, IDfield, "singlepart_temp", IDfield, "WidthPart")
     # Add fields to original file
     joinfields = ["WidthFull", "WidthLand", "WidthPart"]
     arcpy.DeleteField_management(in_trans, joinfields) # in case of reprocessing
-    arcpy.JoinField_management(in_trans, IDfield, clipped_trans, IDfield, joinfields)
+    arcpy.JoinField_management(in_trans, IDfield, out_clipped_trans, IDfield, joinfields)
     # Time report
     endPart4 = time.clock()
     duration = endPart4 - startPart4
     hours, remainder = divmod(duration, 3600)
     minutes, seconds = divmod(remainder, 60)
     print "Barrier island widths completed in %dh:%dm:%fs" % (hours, minutes, seconds)
-    return clipped_trans
+    return out_clipped_trans
 
 def TransectsToContinuousRaster(in_trans, out_rst, cell_size, IDfield='sort_ID'):
     # Create raster of sort_ID - each cell value indicates its nearest transect

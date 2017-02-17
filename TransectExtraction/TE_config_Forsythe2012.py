@@ -60,7 +60,7 @@ inletLines = '{site}{year}_inletLines'.format(**SiteYear_strings)  # manually cr
 armorLines = '{site}{year}_armor'.format(**SiteYear_strings)
 barrierBoundary = '{site}{year}_bndpoly_2sl_edited'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
 elevGrid = '{site}{year}_DEM'.format(**SiteYear_strings)				# Elevation
-elevGrid_5m = elevGrid+'_5m'				# Elevation
+elevGrid_5m = '{site}{year}_dem_5mres'.format(**SiteYear_strings)				# Elevation
 #habitat = 'habitat_201211' 			# Habitat
 
 ############## Outputs ###############################
@@ -73,7 +73,7 @@ shl2trans = '{site}{year}_SHL2trans'.format(**SiteYear_strings)							# beach sl
 MLWpts = '{site}{year}_MLW2trans'.format(**SiteYear_strings)                     # MLW points calculated during Beach Width calculation
 CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)                     # Points used as upper beach edge for Beach Width and height
 shoreline = '{site}{year}_ShoreBetweenInlets_dissolved'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
-slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
+slopeGrid = '{site}{year}_slope5m'.format(**SiteYear_strings)
 
 extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
 transects_part2 = os.path.join(home,'trans_part2')
