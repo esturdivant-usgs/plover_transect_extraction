@@ -27,7 +27,7 @@ arcpy.CheckOutExtension("Spatial") 											# Checkout Spatial Analysis extens
 #arcpy.env.workspace=home= r'D:\ben_usgs\stippaData\FireIsland2012\FireIsland2012.gdb'
 ############ Inputs #########################
 
-arcpy.env.workspace=home= r"\\Mac\Home\Documents\ArcGIS\BreezyPt2014_v2.gdb"
+arcpy.env.workspace=home= r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2014\BP2014.gdb"
 out_dir = r'\\Mac\Home\Documents\ArcGIS\Output_Shps'
 
 year = '2014'

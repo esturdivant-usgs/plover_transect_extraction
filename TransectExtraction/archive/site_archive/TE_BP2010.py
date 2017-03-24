@@ -670,3 +670,55 @@ duration = end - start
 hours, remainder = divmod(duration, 3600)
 minutes, seconds = divmod(remainder, 60)
 print "\nProcessing completed in %dh:%dm:%fs" % (hours, minutes, seconds)
+
+'''___________________________________________________________________________________________________________
+FIXING
+'''
+
+import arcpy, time, os, pythonaddins, sys, math
+sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
+from TransectExtraction import *
+arcpy.env.overwriteOutput = True 											# Overwrite output?
+arcpy.CheckOutExtension("Spatial") 											# Checkout Spatial Analysis extension
+year = '2012'
+site = 'BP'
+code = 'bp12'
+arcpy.env.workspace=home= r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2012\BP2012.gdb"
+out_dir = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2012\Extracted_Data"
+extendedTransects = site+"_extTransects_"+year # Created MANUALLY: see TransExtv4Notes.txt
+fill = -99999	  					# Replace Nulls with
+baseName = 'trans_clip_working'                     # Clipped transects
+
+transPts_ben = 'Rck{}_trans_5mPts_ALL_jan2017'.format(year)
+rst_transID = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\All_Years\{}_transects.gdb\{}_transID".format(site,site)
+
+trans_bw_ben = "{}{}_transBW_ben_jan2017".format(site,year)
+rst_transPopulated = "{}{}_rstTrans_ben_jan2017".format(site,year)
+rst_trans_grid = "{}_bw_jan17".format(code)
+
+# Make sort_ID field by copying values from TransOrder
+transUIDfield = 'sort_ID'
+arcpy.AddField_management(transPts_ben, transUIDfield, "LONG")
+with arcpy.da.UpdateCursor(transPts_ben, ["TransOrder", "sort_ID"]) as cursor:
+    for row in cursor:
+        cursor.updateRow([row[0], row[0]])
+
+# Aggregate by transect
+arcpy.Statistics_analysis(transPts_ben, trans_bw_ben, [['uBW', 'MEAN']], transUIDfield)
+
+#RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
+#arcpy.MakeTableView_management(in_tbl, 'tableview')
+arcpy.MakeRasterLayer_management(rst_transID, 'rst_lyr')
+# arcpy.RemoveJoin_management("rst_lyr", trans_bw_ben)
+
+# arcpy.JoinField_management('rst_lyr', 'Value', trans_bw_ben, transUIDfield, 'MEAN_uBW')
+arcpy.AddJoin_management('rst_lyr', 'Value', trans_bw_ben, transUIDfield)
+arcpy.CopyRaster_management('rst_lyr', rst_transPopulated)
+
+# arcpy.DeleteField_management(rst_transPopulated, ['OBJECTID_1', "FREQUENCY"])
+# fldlist = [f.name for f in arcpy.ListFields(rst_transPopulated)]
+# fldlist.remove(transUIDfield)
+ReplaceValueInFC(rst_transPopulated, None, fill, fields=fldlist)
+ReplaceValueInFC(rst_transPopulated, fill, 9999, fields=fldlist)
+
+arcpy.CopyRaster_management(rst_transPopulated, os.path.join(out_dir, rst_trans_grid))

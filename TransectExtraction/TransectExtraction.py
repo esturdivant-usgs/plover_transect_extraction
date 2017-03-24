@@ -1,9 +1,15 @@
 # Transect Extraction module
 # possible categories: preprocess, create, calculate
 
-import arcpy, time, os, pythonaddins, collections, numpy
-from math import radians, cos, asin, sin, atan2, sqrt, degrees, hypot
+import arcpy
+import time
+import os
+import pythonaddins
+import collections
+import pandas as pd
+import numpy as np
 from operator import add
+
 
 # General use functions
 def SetInputFCname(workingdir, varname, inFCname, system_ext=True):
@@ -61,8 +67,11 @@ def fieldsAbsent(in_fc, fieldnames):
         if not fn.lower() in fnamelist:
             mfields.append(fn)
     if not len(mfields):
+        print("All expected fields present in file '{}'.".format(in_fc))
         return False
     else:
+        print("Fields '{}' not present in transects file '{}'.".format(
+              mfields, in_fc))
         return mfields
 
 def fieldExists(in_fc, fieldname):
@@ -89,12 +98,13 @@ def CopyAndWipeFC(in_fc, out_fc):
 
 def AddNewFields(fc,fieldlist,fieldtype="DOUBLE", verbose=True):
     # Add fields to FC if they do not already exist. New fields must all be the same type.
+    # print('Adding fields to {} as type {} if they do not already exist.'.format(out_fc, fieldtype))
     def AddNewField(fc, newfname, fieldtype, verbose):
         # Add single new field
         if not fieldExists(fc, newfname):
             arcpy.AddField_management(fc, newfname, fieldtype)
             if verbose:
-                print 'Added '+newfname+' field to '+fc
+                print('Added {} field to {}'.format(newfname, fc))
         return fc
     # Execute for multiple fields
     if type(fieldlist) is str:
@@ -116,9 +126,19 @@ def DeleteExtraFields(inTable, keepfields=[]):
 
 def DeleteTempFiles(wildcard='*_temp'):
     # Delete files of type FC, Dataset, or Table ending in '_temp' fromw workspace
-    templist = arcpy.ListFeatureClasses(wildcard)
-    templist = templist + arcpy.ListDatasets(wildcard)
-    templist = templist + arcpy.ListTables(wildcard)
+    templist = []
+    try:
+        templist = templist + arcpy.ListFeatureClasses(wildcard)
+    except:
+        pass
+    try:
+        templist = templist + arcpy.ListDatasets(wildcard)
+    except:
+        pass
+    try:
+        templist = templist + arcpy.ListTables(wildcard)
+    except:
+        pass
     for tempfile in templist:
         arcpy.Delete_management(tempfile)
     return templist
@@ -144,7 +164,7 @@ def newcoord(coords, dist):
     (x1,y1),(x2,y2) = coords
     dx = x2 - x1 # change in x
     dy = y2 - y1 # change in y
-    linelen = hypot(dx, dy) # distance between xy1 and xy2
+    linelen =np.hypot(dx, dy) # distance between xy1 and xy2
     x3 = x2 + dx/linelen * dist
     y3 = y2 + dy/linelen * dist
     return x3, y3
@@ -155,7 +175,7 @@ def newcoord(coords, dist):
     (x1,y1),(x2,y2) = coords
     dx = x2 - x1
     dy = y2 - y1
-    linelen = hypot(dx, dy)
+    linelen = np.hypot(dx, dy)
 
     x3 = x2 + dx/linelen * dist
     y3 = y2 + dy/linelen * dist
@@ -166,7 +186,7 @@ def ReplaceFields(fc, newoldfields, fieldtype='DOUBLE'):
     # E.g. newoldfields={'LENGTH':'SHAPE@LENGTH'}
     spatial_ref = arcpy.Describe(fc).spatialReference
     for (new, old) in newoldfields.items():
-        if not fieldExists(fc, new):
+        if not fieldExists(fc, new): # Add field if it doesn't already exist
             arcpy.DeleteField_management(fc, new)
             arcpy.AddField_management(fc, new, fieldtype)
         with arcpy.da.UpdateCursor(fc, [new, old], spatial_reference=spatial_ref) as cursor:
@@ -176,7 +196,7 @@ def ReplaceFields(fc, newoldfields, fieldtype='DOUBLE'):
             try:
                 arcpy.DeleteField_management(fc,old)
             except:
-                print arcpy.GetMessage(2)
+                print(arcpy.GetMessage(2))
                 pass
     return fc
 
@@ -203,6 +223,7 @@ def AddXYAttributes(fc, newfc, prefix, proj_code=26918):
 
 def ReplaceValueInFC(fc, oldvalue=-99999, newvalue=None, fields="*"):
     # Replace oldvalue with newvalue in fields in fc
+    # First check field types
     with arcpy.da.UpdateCursor(fc, fields) as cursor:
         fieldindex = range(len(cursor.fields))
         for row in cursor:
@@ -210,11 +231,12 @@ def ReplaceValueInFC(fc, oldvalue=-99999, newvalue=None, fields="*"):
                 if row[i] == oldvalue:
                     row[i] = newvalue
             cursor.updateRow(row)
-            # try:
-            #     cursor.updateRow(row)
-            # except RuntimeError:
-            #     #print(cursor.fields[i])
-            #     #print(row)
+                    # try:
+                    #     row[i] = newvalue
+                    #     cursor.updateRow(row)
+                    # except RuntimeError:
+                    #     print(cursor.fields[i])
+                    #     #print(row)
     return fc
 
 def ReplaceValueInFC_v1(fc,fields=[],oldvalue=-99999,newvalue=None):
@@ -271,7 +293,7 @@ def ExtendLine(fc, new_fc, distance, proj_code=26918):
         # accumulate([1,2,3,4,5]) --> 1 3 6 10 15
         # (Equivalent to itertools.accumulate() - isn't in Python 2.7)
         it = iter(iterable)
-        total = next(it)
+        total = next(it) # initialize with the first value
         yield total
         for element in it:
             total = add(total, element)
@@ -566,7 +588,7 @@ def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, pt
     # shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
     shoreline = inPtsDict['shoreline']
     ShorelinePts = inPtsDict['ShorelinePts']
-    arcpy.Intersect_analysis((shoreline,extendedTransects), 'SHL2trans_temp', output_type='POINT')
+    arcpy.Intersect_analysis((shoreline, extendedTransects), 'SHL2trans_temp', output_type='POINT')
     shl2trans, shlfields = AddXYAttributes('SHL2trans_temp', 'SHL2trans', 'SL', proj_code)
     shlfields.append('Bslope')
     # Add lat lon and x y fields to create SHL2trans
@@ -765,7 +787,7 @@ def CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y):
     # Calculate beach width based on dune and shoreline coordinates (meters)
     try:
         # 6 Calculate beach width = Euclidean distance from dune to MHW
-        bw_mhw = hypot(sl_x - d_x, sl_y - d_y)
+        bw_mhw =np.hypot(sl_x - d_x, sl_y - d_y)
     except TypeError:
         bw_mhw = None
     return bw_mhw
@@ -782,7 +804,7 @@ def CalcBeachWidth_MLW(oMLW, duneXY, b_slope, shoreXY):
         mlw_x, mlw_y = newcoord([duneXY, shoreXY], MLWdist)
         #print('bw_mhw - Distance between dune and MHW: {}'.format(bw_mhw))
         # 6 Calculate beach width = Euclidean distance from dune to MLW
-        bw_mlw = hypot(mlw_x - d_x, mlw_y - d_y)
+        bw_mlw =np.hypot(mlw_x - d_x, mlw_y - d_y)
         #print('bw_mlw - Distance between dune and MLW: {}'.format(bw_mlw))
         output = [mlw_x, mlw_y, bw_mlw]
     except TypeError:
@@ -806,14 +828,13 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, MLWpts, C
     if not skip_field_check:
         missing_fields = fieldsAbsent(in_trans, in_fields)
         if missing_fields:
-            print("Field '{}' not present in transects file '{}'. We recommend running AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, transUIDfield, proj_code, pt2trans_disttolerance, home, elevGrid_5m)".format(missing_fields, in_trans))
+            print("Field '{}' not present in transects file '{}'. We recommend running AddFeaturePositionsToTransects(extendedTrans, extendedTransects, inPts_dict,  shoreline, armorLines, id_fld, proj_code, pt2trans_disttolerance, home, elevGrid_5m)".format(missing_fields, in_trans))
             raise Exception
             return False
     # Copy in_trans to out_fc if the output will be different than the input
     if not in_trans == out_fc:
         arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
     # Add fields if they don't already exist
-    print('Adding fields to {} as type Double if they do not already exist.'.format(out_fc))
     AddNewFields(out_fc, out_fields1 + beachWidth_fields)
     # Calculate
     print('Running data access UpdateCursor to calculate values for fields {}...'.format(out_fields1 + beachWidth_fields))
@@ -838,15 +859,15 @@ def CalculateBeachDistances(in_trans, out_fc, maxDH, home, dMHW, oMLW, MLWpts, C
             sl_x = row[flist.index('SL_x')]
             sl_y = row[flist.index('SL_y')]
             try:
-                row[flist.index('DistDH')] = hypot(sl_x - row[flist.index('DH_x')], sl_y - row[flist.index('DH_y')])
+                row[flist.index('DistDH')] =np.hypot(sl_x - row[flist.index('DH_x')], sl_y - row[flist.index('DH_y')])
             except TypeError:
                 pass
             try:
-                row[flist.index('DistDL')] = hypot(sl_x - row[flist.index('DL_x')], sl_y - row[flist.index('DL_y')])
+                row[flist.index('DistDL')] =np.hypot(sl_x - row[flist.index('DL_x')], sl_y - row[flist.index('DL_y')])
             except TypeError:
                 pass
             try:
-                row[flist.index('DistArm')] = hypot(sl_x - row[flist.index('Arm_x')], sl_y - row[flist.index('Arm_y')])
+                row[flist.index('DistArm')] =np.hypot(sl_x - row[flist.index('Arm_x')], sl_y - row[flist.index('Arm_y')])
             except TypeError:
                 pass
             # Find which of DL, DH, and Arm is closest to MHW and not Null (exclude DH if higher than maxDH)
@@ -979,14 +1000,14 @@ def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', ou
     # ALTERNATIVE: add start_x, start_y, end_x, end_y to baseName and then calculate Euclidean distance from array
     #arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xptsbarrier_temp',output_type='POINT') # ~40 seconds
     #arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xlinebarrier_temp',output_type='LINE') # ~30 seconds
-    #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH")
+    #arcpy.CreateRoutes_lr(extendedTransects,id_fld,"transroute_temp","LENGTH")
     # find farthest point to sl_x, sl_y => WidthFull and closest point => WidthPart
     # Clip transects with boundary polygon
     arcpy.Clip_analysis(in_trans, barrierBoundary, out_clipped_trans) # ~30 seconds
     # WidthLand
     ReplaceFields(out_clipped_trans,{'WidthLand':'SHAPE@LENGTH'})
     # WidthFull
-    #arcpy.CreateRoutes_lr(extendedTransects,transUIDfield,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
+    #arcpy.CreateRoutes_lr(extendedTransects,id_fld,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
     # Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
     arcpy.FeatureVerticesToPoints_management(out_clipped_trans, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
     arcpy.PointsToLine_management("verts_temp","trans_temp",IDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
@@ -1088,22 +1109,8 @@ def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtran
     arcpy.FeatureToPoint_management(output, out_pts)
     return out_pts
 
-def CalculatePointDistances(transPts_presort, extendedTransects='extendedTransects, which is not provided'):
-    # Calculate distance of point from shoreline and dunes (Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
-    # Add xy for each segment center point
-    ReplaceFields(transPts_presort, {'seg_x': 'SHAPE@X', 'seg_y': 'SHAPE@Y'})
-    # clipped_trans must have transdistfields
-    transdistfields = ['DistDH', 'DistDL', 'DistArm', 'SL_x', 'SL_y', 'WidthPart']
-    missing_fields = fieldsAbsent(transPts_presort, transdistfields)
-    if missing_fields:
-        print("Input is missing required fields: {}. \nAttempting to retrieve from {}".format(missing_fields, extendedTransects))
-        arcpy.JoinField_management(transPts_presort, transUIDfield, extendedTransects, transUIDfield, missing_fields)
-    # Add fields whose values will be calculated
-    distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
-                  'DistSegDH', 'DistSegDL', 'DistSegArm']
-    AddNewFields(transPts_presort, distfields)
-    # Calculate Euclidean distances
-    with arcpy.da.UpdateCursor(transPts_presort, "*") as cursor:
+def CalculateDistances(transPts):
+    with arcpy.da.UpdateCursor(transPts, "*") as cursor:
         for row in cursor:
             flist = cursor.fields
             try:
@@ -1111,7 +1118,7 @@ def CalculatePointDistances(transPts_presort, extendedTransects='extendedTransec
                 SL_easting = row[flist.index('SL_x')]
                 seg_y = row[flist.index('seg_y')]
                 SL_northing = row[flist.index('SL_y')]
-                dist2mhw = hypot(seg_x - SL_easting, seg_y - SL_northing)
+                dist2mhw =np.hypot(seg_x - SL_easting, seg_y - SL_northing)
                 row[flist.index('Dist_Seg')] = dist2mhw
                 try:
                     row[flist.index('Dist_MHWbay')] = row[flist.index('WidthPart')] - dist2mhw
@@ -1136,4 +1143,86 @@ def CalculatePointDistances(transPts_presort, extendedTransects='extendedTransec
             except RuntimeError as err:
                 print(err)
                 pass
+    return transPts
+
+def CalculatePointDistances(transPts_presort, extendedTransects='extendedTransects, which is not provided', id_fld='sort_ID'):
+    # Calculate distance of point from shoreline and dunes (Dist_Seg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
+    # Add xy for each segment center point
+    ReplaceFields(transPts_presort, {'seg_x': 'SHAPE@X', 'seg_y': 'SHAPE@Y'})
+    # clipped_trans must have transdistfields
+    transdistfields = ['DistDH', 'DistDL', 'DistArm', 'SL_x', 'SL_y', 'WidthPart']
+    missing_fields = fieldsAbsent(transPts_presort, transdistfields)
+    if missing_fields:
+        print("Input is missing required fields: {}. \nAttempting to retrieve from {}".format(missing_fields, extendedTransects))
+        arcpy.JoinField_management(transPts_presort, id_fld, extendedTransects, id_fld, missing_fields)
+    # Add fields whose values will be calculated
+    distfields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
+                  'DistSegDH', 'DistSegDL', 'DistSegArm']
+    AddNewFields(transPts_presort, distfields)
+    # Calculate Euclidean distances
+    CalculateDistances(transPts_presort)
     return transPts_presort
+
+def SummarizePointElevation(transPts, extendedTransects, out_stats, id_fld):
+    # save max and mean in out_stats table using Statistics_analysis
+    arcpy.Statistics_analysis(transPts, out_stats, [['ptZmhw', 'MAX'], ['ptZmhw',
+                              'MEAN'], ['ptZmhw', 'COUNT']], id_fld)
+    # remove mean values if fewer than 80% of 5m points had elevation values
+    with arcpy.da.UpdateCursor(out_stats, ['*']) as cursor:
+        for row in cursor:
+            count = row[cursor.fields.index('COUNT_ptZmhw')]
+            if count is None:
+                row[cursor.fields.index('MEAN_ptZmhw')] = None
+                cursor.updateRow(row)
+            elif count / row[cursor.fields.index('FREQUENCY')] <= 0.8:
+                row[cursor.fields.index('MEAN_ptZmhw')] = None
+                cursor.updateRow(row)
+    # add mean and max fields to points FC using JoinField_management
+    # very slow: over 1 hr (Forsythe: 1:53)
+    arcpy.JoinField_management(transPts, id_fld, out_stats, id_fld,
+                               ['MAX_ptZmhw', 'MEAN_ptZmhw'])
+    try:
+        arcpy.DeleteField_management(extendedTransects, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
+        arcpy.JoinField_management(extendedTransects, id_fld, out_stats,
+                               id_fld, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
+    except:
+        arcpy.JoinField_management(extendedTransects, id_fld, transPts,
+                               id_fld, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
+    return(transPts)
+
+def FCtoDF(fc, xy=False, dffields=False, fill=-99999, id_fld='sort_ID'):
+    # Convert FeatureClass to pandas.DataFrame
+    # 1. Convert FC to Numpy array
+    fcfields = [f.name for f in arcpy.ListFields(fc)]
+    if xy:
+        print('also grabbing X and Y')
+        fcfields += ['SHAPE@X','SHAPE@Y']
+    print('converting FC to array')
+    arr = arcpy.da.FeatureClassToNumPyArray(os.path.join(arcpy.env.workspace, fc), fcfields, null_value=fill)
+    # 2. Convert array to dict
+    if not dffields:
+        print('no fields input')
+        dffields = list(arr.dtype.names)
+    dict1 = {}
+    for f in dffields:
+        if np.ndim(arr[f]) < 2:
+            dict1[f] = arr[f]
+    # 3. Convert dict to DF
+    print('converting dict to df')
+    df = pd.DataFrame(dict1, index=arr[id_fld])
+    df.index.name = id_fld
+    return(df)
+
+def join_with_dataframes(join_fc, target_fc, join_id, target_id, fields=False):
+    # Use pandas to perform outer join join_fc and target_fc
+    # target_fc must have a column that matched join_id
+    # null values will be replaced with fills
+    join_df = FCtoDF(join_fc, dffields=fields, id_fld=trans_id)
+    target_df = FCtoDF(target_fc, dffields=fields, id_fld=pts_id)
+    # Remove columns from target that are present in join, except join_id
+    join_df = join_df.drop(trans_id, axis=1)
+    dup_cols = target_df.axes[1].intersection(join_df.axes[1])
+    target_df = target_df.drop(dup_cols, axis=1)
+    # Perform join
+    pts_final = target_df.join(join_df, on=trans_id, how='outer')
+    return(pts_final)

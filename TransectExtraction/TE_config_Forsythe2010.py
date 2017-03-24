@@ -25,6 +25,7 @@ arcpy.CheckOutExtension("Spatial") 						# Checkout Spatial Analysis extension
 
 CreateMHWline = False
 rawtransects = False
+overwrite_Z = False
 
 plover_rst_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\Zeigler_analysis\Layers_for_BN\{year}\BaseLayers'.format(
     **SiteYear_strings)
@@ -35,10 +36,14 @@ except:
     cellsize_rst = 5
 
 ########### Automatic population ###########
-arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format( **SiteYear_strings)
+site_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}'.format(**SiteYear_strings)
+# base_dir = r'W:\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}'.format( **SiteYear_strings)
+SiteYear_strings['site_dir'] = site_dir
+arcpy.env.workspace = home = r'{site_dir}\{year}\{site}{year}.gdb'.format(**SiteYear_strings)
 SiteYear_strings['home'] = home
-out_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\Extracted_Data'.format(**SiteYear_strings)
-archive_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\All_Years\{site}_transects.gdb'.format(**SiteYear_strings)
+out_dir = r'{site_dir}\{year}\Extracted_Data'.format(**SiteYear_strings)
+archive_dir = r'{site_dir}\All_Years\{site}_transects.gdb'.format(**SiteYear_strings)
+working_dir = r'{site_dir}\{year}\working'.format(**SiteYear_strings)
 
 MHW = SiteYear_strings['MHW']
 MLW = SiteYear_strings['MLW']
@@ -80,7 +85,7 @@ transPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
 transPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
 transPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 transPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
-pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
+pts_elevslope = 'transPts_ZmhwSlp'
 out_stats = os.path.join(home,"avgZ_byTransect")
 extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
@@ -92,8 +97,9 @@ rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings
 rst_trans_grid = "{code}_trans".format(**SiteYear_strings)
 
 ########### Default Values ##########################
-transUIDfield = "sort_ID"
-fill = 9999	  					# Replace Nulls with
+tID_fld = "sort_ID"
+pID_fld = "SplitSort"
+fill = -99999	  					# Replace Nulls with
 pt2trans_disttolerance = "25 METERS"        # Maximum distance that point can be from transect and still be joined; originally 10 m
 if SiteYear_strings['site'] == 'Monomoy':
     maxDH = 3
@@ -126,3 +132,17 @@ transPt_fields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
     'DistSegDH', 'DistSegDL', 'DistSegArm',
     'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
     'MAX_ptZmhw', 'MEAN_ptZmhw']
+extra_fields = ["StartX", "StartY", "ORIG_FID", "Autogen", "ProcTime",
+                "SHAPE_Leng", "OBJECTID_1", "Shape_Length"]
+
+"""
+trans_spatial_inputs = ['sort_ID', 'SL_x', 'SL_y', 'DL_x', 'DL_y', 'DH_z', 'Arm_x',
+    'Arm_y', 'Arm_z', 'WidthPart']
+pts_spatial_inputs = ['seg_x', 'seg_y']
+
+calculated = ['DL_zMHW', 'DH_zMHW', 'Arm_zMHW',
+    'DistDH', 'DistDL', 'DistArm',
+    'MLW_x','MLW_y',
+    'bh_mhw','bw_mhw', 'bh_mlw','bw_mlw',
+    'CP_x','CP_y','CP_zMHW']
+"""

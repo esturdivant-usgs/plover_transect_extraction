@@ -13,6 +13,7 @@ from TransectExtraction import *
 SiteYear_strings = {'site': 'Forsythe',
                     'year': '2014',
                     'region': 'NewJersey',
+                    'code': 'ebf14',
                     'MHW':0.43,
                     'MLW':-0.61,
                     'MTL':None}
@@ -57,6 +58,7 @@ elevGrid_5m = elevGrid+'_5m'				# Elevation
 
 ############## Outputs ###############################
 extendedTransects = '{site}{year}_extTrans_working'.format(**SiteYear_strings)
+extTrans_fill = '{site}{year}_extTrans_fill'.format(**SiteYear_strings)
 dh2trans = '{site}{year}_DH2trans'.format(**SiteYear_strings)							# DHigh within 10m
 dl2trans = '{site}{year}_DL2trans'.format(**SiteYear_strings)						# DLow within 10m
 arm2trans = '{site}{year}_arm2trans'.format(**SiteYear_strings)
@@ -71,10 +73,10 @@ extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
 transects_part2 = os.path.join(home,'trans_part2')
 transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
 transPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
-tranSplitPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
-tranSplitPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
-tranSplitPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
-tranSplitPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
+transPts_null = '{site}{year}_transPts_null'.format(**SiteYear_strings)
+transPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
+transPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
+transPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
 out_stats = os.path.join(home,"avgZ_byTransect")
 extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))

@@ -20,7 +20,7 @@ import sys
 # path to TransectExtraction module
 sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction")
 from TransectExtraction import *
-from TE_config_Forsythe2012 import *
+from TE_config_Forsythe2010 import *
 
 
 start = time.clock()
@@ -51,7 +51,8 @@ ReplaceValueInFC(ShorelinePts, oldvalue=fill, newvalue=None, fields=["slope"])
 
 # INLETS
 if not i_name:
-    arcpy.CreateFeatureclass_management(home, inletLines, 'POLYLINE', spatial_reference=arcpy.SpatialReference(proj_code))
+    arcpy.CreateFeatureclass_management(home, inletLines, 'POLYLINE',
+        spatial_reference=arcpy.SpatialReference(proj_code))
     print("{} created. Now we'll stop for you to manually create lines at each inlet.")
     exit()
 else:
@@ -59,7 +60,8 @@ else:
 
 # BOUNDARY POLYGON
 if not bb_name:
-    rawbarrierline = DEMtoFullShorelinePoly(elevGrid, '{site}{year}'.format(**SYvars), MTL, MHW, inletLines, ShorelinePts)
+    rawbarrierline = DEMtoFullShorelinePoly(elevGrid,
+        '{site}{year}'.format(**SYvars), MTL, MHW, inletLines, ShorelinePts)
     # Eliminate any remnant polygons on oceanside
     if pythonaddins.MessageBox('Ready to delete selected features from {}?'.format(rawbarrierline), '', 4) == 'Yes':
         arcpy.DeleteFeatures_management(rawbarrierline)
@@ -74,7 +76,8 @@ else:
 
 # SHORELINE
 if not new_shore:
-    shoreline = CreateShoreBetweenInlets(barrierBoundary, inletLines, shoreline, ShorelinePts, proj_code)
+    shoreline = CreateShoreBetweenInlets(barrierBoundary, inletLines,
+                                         shoreline, ShorelinePts, proj_code)
 else:
     shoreline = new_shore
 
@@ -100,8 +103,13 @@ Requires DH, DL, and SHL points, NA transects
 --> dhPts, dlPts, ShorelinePts, shoreline, armoreLines,
 --> elevGrid
 '''
-
-AddFeaturePositionsToTransects(in_trans=orig_extTrans, out_fc=extendedTransects, inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts, 'shoreline': shoreline, 'armorLines': armorLines}, IDfield=transUIDfield, proj_code=proj_code, disttolerance=pt2trans_disttolerance, home=home, elevGrid_5m=elevGrid_5m)
+inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts,
+'shoreline': shoreline, 'armorLines': armorLines}
+# ShorelinePtsToTransects(extendedTransects, inPtsDict, transUIDfield, proj_code, pt2trans_disttolerance)
+AddFeaturePositionsToTransects(in_trans=orig_extTrans, out_fc=extendedTransects,
+    inPtsDict=inPtsDict, IDfield=transUIDfield,
+    proj_code=proj_code, disttolerance=pt2trans_disttolerance, home=home,
+    elevGrid_5m=elevGrid_5m)
 
 # May need to add process that takes
 
@@ -173,12 +181,11 @@ print 'Starting Part 5'
 print 'Expect a 3 to 15 minute wait'
 startPart5 = time.clock()
 
-
-transdistfields = ['DistDH', 'DistDL', 'DistArm', 'SL_x', 'SL_y', 'WidthPart']
-missing_fields = fieldsAbsent(extTrans_tidy, transdistfields)
-if missing_fields:
-    arcpy.JoinField_management(extTrans_tidy, transUIDfield, extendedTransects,
-                               transUIDfield, missing_fields)
+# transdistfields = ['DistDH', 'DistDL', 'DistArm', 'SL_x', 'SL_y', 'WidthPart']
+# missing_fields = fieldsAbsent(extTrans_tidy, transdistfields)
+# if missing_fields:
+#     arcpy.JoinField_management(extTrans_tidy, transUIDfield, extendedTransects,
+#                                transUIDfield, missing_fields)
 # Split transects into points
 SplitTransectsToPoints(extTrans_tidy, transPts_presort, barrierBoundary,
                        home, clippedtrans='trans_clipped2island')
@@ -203,15 +210,15 @@ DeleteTempFiles()
 
 '''____________________________________________________________________________
 
-   /\\\\\\\\\\\\\      /\\\\\\\\\       /\\\\\\\\\       /\\\\\\\\\\\\\\\                   /\\\\\
-   \/\\\/////////\\\   /\\\\\\\\\\\\\   /\\\///////\\\   \///////\\\/////                  /\\\\/
-    \/\\\       \/\\\  /\\\/////////\\\ \/\\\     \/\\\         \/\\\                     /\\\//
-     \/\\\\\\\\\\\\\/  \/\\\       \/\\\ \/\\\\\\\\\\\/          \/\\\                   /\\\\\\\\\\\
-      \/\\\/////////    \/\\\\\\\\\\\\\\\ \/\\\//////\\\          \/\\\                  /\\\\///////\\\
-       \/\\\             \/\\\/////////\\\ \/\\\    \//\\\         \/\\\                 \/\\\      \//\\\
-        \/\\\             \/\\\       \/\\\ \/\\\     \//\\\        \/\\\                 \//\\\      /\\\
-         \/\\\             \/\\\       \/\\\ \/\\\      \//\\\       \/\\\                  \///\\\\\\\\\/
-          \///              \///        \///  \///        \///        \///                    \/////////
+   /\\\\\\\\\\\\\                   /\\\\\
+   \/\\\/////////\\\               /\\\\/
+    \/\\\       \/\\\             /\\\//
+     \/\\\\\\\\\\\\\/            /\\\\\\\\\\\
+      \/\\\/////////             /\\\\///////\\\
+       \/\\\                     \/\\\      \//\\\
+        \/\\\                     \//\\\      /\\\
+         \/\\\                      \///\\\\\\\\\/
+          \///                       \/////////
 _______________________________________________________________________________
 Extract elev and slope at points and calculate average elevation per transect
 Requires: tranSplitPts (points at which to extract elevation), elevGrid
@@ -245,7 +252,8 @@ else:
             'ptZ "ptZ" true true false 4 Float 0 0 ,First,#, {source}, ptZ,-1,-1;'\
             'ptSlp "ptSlp" true true false 4 Float 0 0 ,First,#, {source}, ptSlp,-1,-1;'\
             'ptZmhw "ptZmhw" true true false 8 Double 0 0 ,First,#, {source}, ptZmhw,-1,-1;'\
-            'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': transPts})
+            'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source},'\
+            ' sort_ID,-1,-1'.format(**{'source': transPts})
     # fieldlist = ['SplitSort', 'ptZ', 'ptSlp', 'ptZmhw']
     # fmaps = arcpy.FieldMappings()
     # for f in fieldlist:
@@ -264,17 +272,20 @@ arcpy.Statistics_analysis(transPts, out_stats, [['ptZmhw', 'MAX'], ['ptZmhw',
 # remove mean values if fewer than 80% of 5m points had elevation values
 with arcpy.da.UpdateCursor(out_stats, ['*']) as cursor:
     for row in cursor:
-        if row[cursor.fields.index('COUNT_ptZmhw')] is None:
+        count = row[cursor.fields.index('COUNT_ptZmhw')]
+        if count is None:
             row[cursor.fields.index('MEAN_ptZmhw')] = None
             cursor.updateRow(row)
-        elif row[cursor.fields.index('COUNT_ptZmhw')] / row[cursor.fields.index('FREQUENCY')] <= 0.8:
+        elif count / row[cursor.fields.index('FREQUENCY')] <= 0.8:
             row[cursor.fields.index('MEAN_ptZmhw')] = None
             cursor.updateRow(row)
 
 # add mean and max fields to points FC using JoinField_management
+# very slow: over 1 hr (Forsythe: 1:53)
 arcpy.JoinField_management(transPts, transUIDfield, out_stats, transUIDfield,
-                           ['MAX_ptZmhw', 'MEAN_ptZmhw'])  # very slow: over 1 hr (Forsythe: 1:53)
+                           ['MAX_ptZmhw', 'MEAN_ptZmhw'])
 try:
+    arcpy.DeleteField_management(extendedTransects, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
     arcpy.JoinField_management(extendedTransects, transUIDfield, out_stats,
                            transUIDfield, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
 except:
@@ -285,6 +296,7 @@ except:
 Save final files: extendedTransects -> extendedTransects_null,
 extT_fill
 '''
+
 missing_Tfields = fieldsAbsent(extendedTransects, transect_fields)
 if missing_Tfields:
     print("Fields '{}' not present in transects file '{}'.".format(
@@ -293,9 +305,11 @@ if missing_Tfields:
 extT_fill, out_rst = FCtoRaster(in_fc=extendedTransects, in_ID=rst_transID,
                                 out_rst=rst_trans_grid, IDfield=transUIDfield,
                                 home=home, fill=fill, cell_size=cellsize_rst)
-arcpy.CopyRaster_management(rst_transPopulated, os.path.join(out_dir, rst_trans_grid))
+#arcpy.CopyRaster_management(out_rst, os.path.join(out_dir, rst_trans_grid))
+
 # Check that transPts have all fields from extendedTransects and
 # join those that are missing.
+missing_fields = ['SL_Lat', 'SL_Lon', 'SL_x', 'SL_y', 'Bslope']
 missing_fields = fieldsAbsent(transPts, transect_fields)
 if missing_fields:
     print("Fields '{}' not present in 5m points file '{}'.".format(
@@ -310,15 +324,28 @@ arcpy.FeatureClassToFeatureClass_conversion(transPts, home, transPts_null)
 # Replace Null values with fills and save as FC, SHP, and CSV
 arcpy.FeatureClassToFeatureClass_conversion(transPts, home, transPts_fill)
 ReplaceValueInFC(transPts_fill, None, fill)
-arcpy.FeatureClassToFeatureClass_conversion(transPts, out_dir,
+arcpy.FeatureClassToFeatureClass_conversion(transPts_fill, out_dir,
                                             transPts_shp+'.shp')
 arcpy.TableToTable_conversion(transPts_fill, out_dir,
                               transPts_fill+'.csv')
 
-finalmessage = "The final products ({}) were exported as a shapefile and CSV to {}. \n\nNow enter the USER to save the table: \n\n1. Open the CSV in Excel and then Save as... a .xlsx file. \n2. Open the XLS file in Matlab with the data checking script to check for errors! ".format(transPts_shp, out_dir)
+finalmessage = "The final products ({}) were exported as a shapefile and CSV "\
+               "to {}. \n\nNow enter the USER to save the table: \n\n"\
+               "1. Open the CSV in Excel and then Save as... a .xlsx file. \n"\
+               "2. Open the XLS file in Matlab with the data checking script "\
+               "to check for errors! ".format(transPts_shp, out_dir)
 print(finalmessage)
 pythonaddins.MessageBox(finalmessage, 'Final Steps')
 
+arcpy.FeatureClassToFeatureClass_conversion(transPts, home, transPts_fill)
+ReplaceValueInFC(transPts_fill, None, fill)
+arcpy.TableToTable_conversion(transPts_fill, out_dir,
+                              transPts_fill+'.csv')
+extTrans_fill = '{site}{year}_extTrans_fill'.format(**SiteYear_strings)
+arcpy.FeatureClassToFeatureClass_conversion(extendedTransects, home, extTrans_fill)
+ReplaceValueInFC(extTrans_fill, None, fill)
+arcpy.TableToTable_conversion(extTrans_fill, out_dir,
+                            extTrans_fill+'.csv')
 
 end = time.clock()
 duration = end - start

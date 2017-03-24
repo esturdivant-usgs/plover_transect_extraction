@@ -1006,3 +1006,75 @@ duration = end - start
 hours, remainder = divmod(duration, 3600)
 minutes, seconds = divmod(remainder, 60)
 print "\nProcessing completed in %dh:%dm:%fs" % (hours, minutes, seconds)
+
+'''___________________________________________________________________________________________________________
+FIXING
+'''
+
+import arcpy, time, os, pythonaddins, sys, math
+sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
+from TransectExtraction import *
+arcpy.env.overwriteOutput = True 							# Overwrite output?
+arcpy.CheckOutExtension("Spatial") 							# Checkout Spatial Analysis extension
+# INPUTS
+year = '2010'
+site_long = 'FireIsland'
+site = 'FI'
+code = 'fi10'
+parentdir = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\{}".format(site_long)
+arcpy.env.workspace=home= r"{}\{}\{}{}.gdb".format(parentdir, year, site_long, year)
+out_dir = r"{}\{}\Extracted_Data".format(parentdir, year)
+rst_transID = r"{}\All_Years\{}_transects.gdb\{}_rstTransID".format(parentdir, site_long, site_long)
+transPts_ben = '{}{}_trans_5mPtsUpCombined_ALL1219'.format(site,year)
+in_xls = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\\{}.xlsx\Sheet1$".format(parentdir, transPts_ben)
+trans_bw_ben = "{}{}_transBW_ben_jan2017".format(site,year)
+rst_transPopulated = "{}{}_rstTrans_ben_jan2017".format(site,year)
+rst_trans_grid = "{}_bw_jan17".format(code)
+extendedTransects = site+"_extTransects_"+year # Created MANUALLY: see TransExtv4Notes.txt
+fill = -99999	  					# Replace Nulls with
+baseName = 'trans_clip_working'                     # Clipped transects
+transUIDfield = 'sort_ID'
+
+# Export XLS table to gdb
+arcpy.TableToTable_conversion(in_xls, os.path.join(home, transPts_ben))
+
+# Aggregate by transect
+arcpy.Statistics_analysis(transPts_ben, trans_bw_ben, [['uBW', 'MEAN']], "TransOrder")
+# Make sort_ID field by copying values from TransOrder
+# arcpy.AddField_management(trans_bw_ben, transUIDfield, "LONG")
+# with arcpy.da.UpdateCursor(trans_bw_ben, ["TransOrder", transUIDfield]) as cursor:
+#     for row in cursor:
+#         cursor.updateRow([row[0], row[0]])
+# Adjust sort_ID values to not skip 229
+with arcpy.da.UpdateCursor(trans_bw_ben, transUIDfield) as cursor:
+    for row in cursor:
+        if row[0] > 229:
+            cursor.updateRow([row[0]-1])
+with arcpy.da.UpdateCursor(transPts_ben, transUIDfield) as cursor:
+    for row in cursor:
+        if row[0] > 229:
+            cursor.updateRow([row[0]-1])
+with arcpy.da.UpdateCursor(transPts_ben+"_pts", transUIDfield) as cursor:
+    for row in cursor:
+        if row[0] > 229:
+            cursor.updateRow([row[0]-1])
+
+# outEucAll = arcpy.sa.EucAllocation(extendedTransects, maximum_distance=50, cell_size=5, source_field=transUIDfield)
+# outEucAll.save(rst_transID)
+#RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
+#arcpy.MakeTableView_management(in_tbl, 'tableview')
+arcpy.MakeRasterLayer_management(rst_transID, 'rst_lyr')
+# arcpy.RemoveJoin_management("rst_lyr", trans_bw_ben)
+
+# arcpy.JoinField_management('rst_lyr', 'Value', trans_bw_ben, transUIDfield, 'MEAN_uBW')
+arcpy.AddJoin_management('rst_lyr', 'Value', trans_bw_ben, transUIDfield)
+arcpy.CopyRaster_management('rst_lyr', rst_transPopulated)
+
+# arcpy.DeleteField_management(rst_transPopulated, ['OBJECTID_1', "FREQUENCY"])
+fldlist = [f.name for f in arcpy.ListFields(rst_transPopulated)]
+fldlist.remove(transUIDfield)
+fldlist = "*"
+ReplaceValueInFC(rst_transPopulated, None, fill, fields=fldlist)
+ReplaceValueInFC(rst_transPopulated, fill, 9999, fields=fldlist)
+
+arcpy.CopyRaster_management(rst_transPopulated, os.path.join(out_dir, rst_trans_grid))
