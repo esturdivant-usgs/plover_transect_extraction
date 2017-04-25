@@ -35,7 +35,10 @@ rawtransects = False
 plover_rst_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\Zeigler_analysis\Layers_for_BN\{year}\BaseLayers'.format(
     **SiteYear_strings)
 arcpy.env.workspace = plover_rst_dir
-cellsize_rst = os.path.join(plover_rst_dir, arcpy.ListRasters()[0])
+try:
+    cellsize_rst = os.path.join(plover_rst_dir, arcpy.ListRasters()[0])
+except:
+    cellsize_rst = 5
 
 # ########## Automatic population ###########
 arcpy.env.workspace = home = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\{site}\{year}\{site}{year}.gdb'.format(**SiteYear_strings)
@@ -76,6 +79,8 @@ shoreline = '{site}{year}_ShoreBetweenInlets_dissolved'.format(**SiteYear_string
 slopeGrid = '{site}{year}_slope5m'.format(**SiteYear_strings)
 
 extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
+extTrans_fill = '{site}{year}_extTrans_fill'.format(**SiteYear_strings)
+extTrans_null = '{site}{year}_extTrans_null'.format(**SiteYear_strings)
 transects_part2 = os.path.join(home,'trans_part2')
 transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
 transPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
@@ -90,13 +95,15 @@ beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 transPts_presort = 'transPts_presort'
 
-rst_transID = "{site}{year}_rstTransID".format(**SiteYear_strings)
+rst_transID = "{site}_rstTransID".format(**SiteYear_strings)
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
 rst_trans_grid = "{code}_trans".format(**SiteYear_strings)
 
 ########### Default Values ##########################
-transUIDfield = "sort_ID"
-fill = 9999	  					# Replace Nulls with
+tID_fld = "sort_ID"
+pID_fld = "SplitSort"
+# transUIDfield = "sort_ID"
+fill = -99999	  					# Replace Nulls with
 pt2trans_disttolerance = "25 METERS"        # Maximum distance that point can be from transect and still be joined; originally 10 m
 if SiteYear_strings['site'] == 'Monomoy':
     maxDH = 3
@@ -130,7 +137,8 @@ transPt_fields = ['Dist_Seg', 'Dist_MHWbay', 'seg_x', 'seg_y',
                   'DistSegDH', 'DistSegDL', 'DistSegArm',
                   'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
                   'MAX_ptZmhw', 'MEAN_ptZmhw']
-
+extra_fields = ["StartX", "StartY", "ORIG_FID", "Autogen", "ProcTime",
+                "SHAPE_Leng", "OBJECTID_1", "Shape_Length"]
 """
 # Update fieldnames to new:
 transect_fields_v1 = ['SL_Lat', 'SL_Lon', 'SL_easting', 'SL_northing', 'Bslope',

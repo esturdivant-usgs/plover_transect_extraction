@@ -697,6 +697,7 @@ def BeachPointMetricsToTransects(transects, oldPts, newPts, fieldnamesdict,joinf
     return transects
 
 def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, IDfield, proj_code, disttolerance, home, elevGrid_5m):
+    # FIXME: this could be performed mostly with PANDAS
     # Add Feature Positions To Transects, XYZ from DH, DL, & Arm points within 10m of transects
     # Requires DH, DL, and SHL points, NA transects
     startPart1 = time.clock()
@@ -1053,7 +1054,7 @@ def JoinFCtoRaster(in_tbl, rst_ID, out_rst, IDfield='sort_ID'):
     return out_rst
 
 def FCtoRaster(in_fc, in_ID, out_rst, IDfield, home, fill=False, cell_size=5):
-    # Convert feature class to continuous raster inwhich output raster has takes the values from the nearest feature (Euclidean distance).
+    # Convert feature class to continuous raster in which output raster takes the values from the nearest feature (Euclidean distance).
     # in_ID could = original tidyTrans, existing ID raster, or ID raster to be created
     # If an ID raster does not exist, it will be created from the specified ID field of the feature class.
     # Optionally replace Null values with fill.
@@ -1190,39 +1191,161 @@ def SummarizePointElevation(transPts, extendedTransects, out_stats, id_fld):
                                id_fld, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
     return(transPts)
 
-def FCtoDF(fc, xy=False, dffields=False, fill=-99999, id_fld='sort_ID'):
-    # Convert FeatureClass to pandas.DataFrame
+def FCtoDF(fc, xy=False, dffields=False, fill=-99999, id_fld=False, extra_fields=[], verbose=True):
+    # Convert FeatureClass to pandas.DataFrame with np.nan values
     # 1. Convert FC to Numpy array
     fcfields = [f.name for f in arcpy.ListFields(fc)]
     if xy:
-        print('also grabbing X and Y')
+        message = 'Converting feature class to array with X and Y...'
         fcfields += ['SHAPE@X','SHAPE@Y']
-    print('converting FC to array')
+    else:
+        message = 'Converting feature class to array...'
+    if verbose:
+        print(message)
     arr = arcpy.da.FeatureClassToNumPyArray(os.path.join(arcpy.env.workspace, fc), fcfields, null_value=fill)
     # 2. Convert array to dict
+    if verbose:
+        print('Converting array to dataframe...')
     if not dffields:
-        print('no fields input')
         dffields = list(arr.dtype.names)
     dict1 = {}
     for f in dffields:
         if np.ndim(arr[f]) < 2:
             dict1[f] = arr[f]
     # 3. Convert dict to DF
-    print('converting dict to df')
-    df = pd.DataFrame(dict1, index=arr[id_fld])
-    df.index.name = id_fld
+    if not id_fld:
+        df = pd.DataFrame(dict1)
+    else:
+        df = pd.DataFrame(dict1, index=arr[id_fld])
+        df.index.name = id_fld
+        df.drop(id_fld, axis=1, inplace=True)
+    for col, ser in df.iteritems():
+        ser.replace(fill, np.nan, inplace=True)
+    if len(extra_fields) > 0:
+        df.drop(extra_fields, axis=1, inplace=True, errors='ignore')
     return(df)
 
 def join_with_dataframes(join_fc, target_fc, join_id, target_id, fields=False):
     # Use pandas to perform outer join join_fc and target_fc
     # target_fc must have a column that matched join_id
     # null values will be replaced with fills
-    join_df = FCtoDF(join_fc, dffields=fields, id_fld=trans_id)
-    target_df = FCtoDF(target_fc, dffields=fields, id_fld=pts_id)
+    join_df = FCtoDF(join_fc, dffields=fields, id_fld=join_id)
+    target_df = FCtoDF(target_fc, dffields=fields, id_fld=target_id)
     # Remove columns from target that are present in join, except join_id
-    join_df = join_df.drop(trans_id, axis=1)
+    join_df = join_df.drop(join_id, axis=1)
     dup_cols = target_df.axes[1].intersection(join_df.axes[1])
     target_df = target_df.drop(dup_cols, axis=1)
     # Perform join
-    pts_final = target_df.join(join_df, on=trans_id, how='outer')
+    pts_final = target_df.join(join_df, on=join_id, how='outer')
     return(pts_final)
+
+def JoinDFtoFC(df, in_fc, join_id, target_id=False, out_fc='', join_fields=[], target_fields=[], fill=-99999):
+    # Convert DF to table and join to FC; overwrite fields in target with joined fields
+    if not target_id:
+        target_id=join_id
+    print('Converting the dataframe to a geodatabase table...')
+    df1 = df.select_dtypes(exclude=['object']).fillna(fill)
+    arr = df1.to_records()
+    tbl = os.path.join(arcpy.env.workspace, os.path.basename(in_fc) + 'join_temp')
+    arcpy.Delete_management(tbl)
+    arcpy.da.NumPyArrayToTable(arr, tbl)
+    if not len(out_fc): # if out_fc is blank,
+        out_fc = in_fc
+    else:
+        print('Initializing the output feature class by copying the input...')
+        arcpy.FeatureClassToFeatureClass_conversion(in_fc, arcpy.env.workspace, out_fc)
+    print('Deleting any overlapping fields from the target features...')
+    if not len(join_fields):
+        # list fields to delete from target
+        join_fields = df1.columns.drop([target_id]+target_fields, errors='ignore') #arr.dtype.names
+    else:
+        try:
+            join_fields.remove(target_id)
+        except ValueError:
+            pass
+    arcpy.DeleteField_management(out_fc, join_fields)
+    # for fld in join_fields:
+    #     if not fld in target_fields and not fld == target_id:
+    #         try: #if fieldExists(targetfc, dest):
+    #             arcpy.DeleteField_management(out_fc, fld)
+    #         except:
+    #             pass
+    print('Performing join...')
+    arcpy.JoinField_management(out_fc, target_id, tbl, join_id, join_fields)
+    return(out_fc)
+
+def DFtoFC(df, fc, spatial_ref, id_fld='', xy=["seg_x", "seg_y"], keep_fields=[], fill=-99999):
+    # Create FC from DF; default will only copy XY and ID fields
+    # using too many fields with a large dataset will fail
+    xflds = df.columns.drop(xy+keep_fields+[id_fld])
+    arr = (df.select_dtypes(exclude=['object'])
+             .drop(xflds, errors='ignore', axis=1)
+             .astype('f8')
+             .fillna(fill)
+             .to_records())
+    fc = os.path.join(arcpy.env.workspace, os.path.basename(fc))
+    arcpy.Delete_management(fc)
+    arcpy.da.NumPyArrayToFeatureClass(arr, fc, xy, spatial_ref)
+    return(fc)
+
+def DFtoFC_2parts(pts_df, pts_fc, trans_df, trans_fc, spatial_ref, df_id='SplitSort', group_id='sort_ID', xy=["seg_x", "seg_y"], pt_flds=[], group_flds=[], fill=-99999):
+    # Create FC from DF using only XY and ID; then join the DF to the new FC
+    # 1. Create FC of only pt fields
+    DFtoFC(pts_df, pts_fc, spatial_ref, df_id, xy, pt_flds, fill)
+    # 2. Create FC of transect fields by joining back to extendedTransects
+    group_fc = JoinDFtoFC(trans_df, trans_fc, group_id, out_fc=trans_fc+'_fromDF')
+    # 3. Join transect fields to points in ArcPy
+    missing_fields = fieldsAbsent(pts_fc, group_flds)
+    arcpy.JoinField_management(pts_fc, group_id, group_fc, group_id, missing_fields)
+    return(pts_fc, group_fc)
+
+def JoinDFtoRaster(df, rst_ID, out_rst, fill=-99999, id_fld='sort_ID'):
+    # Join fields from df to rst_ID to create new out_rst
+    # replace null with fill
+    # df.select_dtypes(exclude='object')
+    trans_arr = df.select_dtypes(exclude=['object']).fillna(fill).to_records()
+    trans_tbl = os.path.join(arcpy.env.workspace, os.path.basename(out_rst) + '_temp')
+    arcpy.Delete_management(trans_tbl)
+    arcpy.da.NumPyArrayToTable(trans_arr, trans_tbl)
+    arcpy.MakeTableView_management(trans_tbl, 'tableview')
+    RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
+    arcpy.MakeRasterLayer_management(rst_ID, 'rst_lyr')
+    arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', id_fld)
+    arcpy.CopyRaster_management('rst_lyr', out_rst)
+    return(out_rst)
+
+def DFtoTable(df, tbl):
+    arr = df.select_dtypes(exclude=['object']).fillna(fill).to_records()
+    arcpy.Delete_management(tbl)
+    arcpy.da.NumPyArrayToTable(arr, tbl)
+    return(tbl)
+
+def JoinDFtoRaster_setvalue(df, rst_ID, out_rst, fill=-99999, id_fld='sort_ID', val_fld=''):
+    # Join fields from df to rst_ID to create new out_rst
+    # replace null with fill
+    # df.select_dtypes(exclude='object')
+    # Convert DF to Table
+    trans_tbl = os.path.join(arcpy.env.workspace, os.path.basename(out_rst) + '_temp')
+    # DFtoTable(df, trans_tbl)
+    trans_arr = df.select_dtypes(exclude=['object']).fillna(fill).to_records()
+    arcpy.Delete_management(trans_tbl)
+    arcpy.da.NumPyArrayToTable(trans_arr, trans_tbl)
+    # Make raster
+    RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
+    arcpy.MakeRasterLayer_management(rst_ID, 'rst_lyr')
+    # Join data to raster and save as out_rst
+    arcpy.MakeTableView_management(trans_tbl, 'tableview')
+    arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', id_fld)
+    # Try Lookup (FIXME: might require certain type of values, e.g. 'f8')
+    if len(val_fld):
+        try:
+            # val_fld = os.path.basename(trans_tbl) + val_fld
+            outRas = arcpy.sa.Lookup(out_rst, val_fld)
+            outRas.save(out_rst+val_fld)
+            print('New raster is saved as {}. Field "VALUE" is {}.'.format(out_rst+val_fld, val_fld))
+        except:
+            val_fld = ''
+    if not len(val_fld):
+        arcpy.CopyRaster_management('rst_lyr', out_rst)
+        print('New raster is saved as {}. Field "VALUE" is ID and "UBW" is beachwidth.'.format(out_rst))
+    return(out_rst)
