@@ -16,17 +16,20 @@ Notes:
 import os
 import sys
 import time
+import shutil
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 # path to TransectExtraction module
 if sys.platform == 'win32':
-    sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
+    script_path = r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction"
+    sys.path.append(script_path) # path to TransectExtraction module
     import arcpy
     import pythonaddins
     from TE_functions_arcpy import *
 if sys.platform == 'darwin':
-    sys.path.append('/Users/esturdivant/GitHub/plover_transect_extraction/TransectExtraction')
+    script_path = '/Users/esturdivant/GitHub/plover_transect_extraction/TransectExtraction'
+    sys.path.append(script_path)
 from TE_config import *
 from TE_functions import *
 
@@ -87,39 +90,43 @@ arcpy.sa.ExtractMultiValuesToPoints(transPts_presort, [[elevGrid_5m, 'ptZ'],
 """
 SPATIAL + PANDAS:
 """
-# convert to pandas
 # Convert transects and points to DataFrames
 trans_df = FCtoDF(extendedTransects, id_fld=tID_fld)
+trans_dfxy = FCtoDF(extendedTransects, xy=True, id_fld=tID_fld)
 pts_df = FCtoDF(transPts, xy=True, extra_fields=extra_fields + old_fields + repeat_fields)
 # Calculate DistSeg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
-pts_df = prep_points(pts_df, tID_fld, pID_fld)
+pts_df = prep_points(pts_df, tID_fld, pID_fld, old2newflds)
 
 # # Save dataframes to open elsewhere or later
-# trans_df.to_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
-# pts_df.to_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
+trans_df.to_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
+pts_df.to_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
 # pts_df= pd.read_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
 # trans_df= pd.read_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
 
 #
 #FIXME: return all fields from input, not just xyz
-dl_df = FCtoDF(dlPts, xy=True)
-dh_df = FCtoDF(dhPts, xy=True)
-pts_df, dl2trans = dunes_to_trans(pts_df, dl_df, tID_fld=tID_fld, fields='all', zfld='dlow_z')
-pts_df, dh2trans = dunes_to_trans(pts_df, dh_df, tID_fld=tID_fld, fields='all', zfld='dhi_z')
-DFtoFC(dl2trans, dl2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dl2trans.columns])
-DFtoFC(dh2trans, dh2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dh2trans.columns])
+# dl_df = FCtoDF(dlPts, xy=True)
+# dh_df = FCtoDF(dhPts, xy=True)
+# pts_df, dl2trans = dunes_to_trans(pts_df, dl_df)#, tID_fld=tID_fld, fields='all', zfld='dlow_z')
+# pts_df, dh2trans = dunes_to_trans(pts_df, dh_df, tID_fld=tID_fld, fields='all', zfld='dhi_z')
+# dl2trans_fc = 'test_DL2trans_fromPD'
+# DFtoFC(dl2trans, dl2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dl2trans.columns])
+# DFtoFC(dh2trans, dh2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dh2trans.columns])
 
 # Beach distances
 pts_df, bws_trans = calc_beach_width(pts_df, maxDH, tID_fld)
+trans_df = join_columns(trans_df, bws_trans)
+trans_dfxy = join_columns(trans_dfxy, bws_trans)
 
 # Aggregate ptZmhw to max and mean and join to transPts and extendedTransects
 pts_df, zmhw = aggregate_z(pts_df, MHW, tID_fld, 'ptZ')
+trans_df = join_columns(trans_df, zmhw) # join new fields to transects
+trans_dfxy = join_columns(trans_dfxy, zmhw) # join new fields to transects
+pts_df = join_columns(pts_df, trans_df, tID_fld) # Join transect values to pts
 
-trans_df = join_columns(trans_df, bws_trans)
-trans_df = join_columns(trans_df, zmhw)
-# Join transect values to pts
-pts_df = join_columns(pts_df, trans_df, tID_fld)
-
+# # Save dataframes to open elsewhere or later
+trans_df.to_pickle(os.path.join(out_dir, extTrans_null+'.pkl'))
+pts_df.to_pickle(os.path.join(out_dir, transPts_null+'.pkl'))
 # pts_df = pd.read_pickle(os.path.join(out_dir,transPts_null+'.pkl'))
 # trans_df = pd.read_pickle(os.path.join(out_dir, extTrans_null+'.pkl'))
 
@@ -136,13 +143,15 @@ print("The table ({}.csv) was exported as a CSV to {}. Now:\n\n"\
 
 # Join DF to raster
 # bw_rst = JoinDFtoRaster(bws_trans, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld)
-#FIXME: setting value isn't working yet
 bw_rst = JoinDFtoRaster_setvalue(bws_trans, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld, val_fld='uBW')
+bw_rst = JoinDFtoRaster_setvalue(trans_df, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld, val_fld='uBW')
 # rst_transgrid = JoinDFtoRaster(trans_df, rst_transIDpath, rst_transgrid_path, fill=fill, IDfield=tID_fld)
 
-# Convert pts_df to transPts_fill
-pts_fc, trans_fc = DFtoFC_2parts(pts_df, transPts_fill, trans_df,
-                        extendedTransects, utmSR, pt_flds=pt_flds, group_flds=trans_flds)
+# Convert pts_df to FC, both pts and trans (pts_fc, trans_fc)
+# ** Takes a while **
+transPts_fill = transPts_fill+'_fromDF'
+pts_fc, trans_fc = DFtoFC_2parts(pts_df, outFC_pts=transPts_fill, trans_df=trans_df,
+                        trans_fc=extendedTransects, spatial_ref=utmSR, pt_flds=pt_flds, group_flds=trans_flds)
 
 # Save final SHP, and FCs with null values
 arcpy.FeatureClassToFeatureClass_conversion(pts_fc, out_dir, transPts_shp+'.shp')
@@ -150,3 +159,10 @@ arcpy.FeatureClassToFeatureClass_conversion(pts_fc, home, transPts_null)
 ReplaceValueInFC(transPts_null, fill, None)
 arcpy.FeatureClassToFeatureClass_conversion(trans_fc, home, extTrans_null)
 ReplaceValueInFC(extTrans_null, fill, None)
+
+
+# Export the files used to run the process to code file in home dir
+shutil.copy(os.path.join(script_path, 'TE_master_rework.py'), os.path.join(code_dir, 'TE_master_rework.py')
+shutil.copy(os.path.join(script_path, 'TE_config.py'), os.path.join(code_dir, 'TE_config.py')
+shutil.copy(os.path.join(script_path, 'TE_functions.py'), os.path.join(code_dir, 'TE_functions.py')
+shutil.copy(os.path.join(script_path, 'TE_functions_arcpy.py'), os.path.join(code_dir, 'TE_functions_arcpy.py')

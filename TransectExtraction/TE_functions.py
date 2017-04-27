@@ -43,8 +43,11 @@ def join_columns(df1, df2, id_fld='ID', how='outer'):
                   .join(df2, how=how))
     return(df1)
 
-def prep_points(df, tID_fld, pID_fld):
+def prep_points(df, tID_fld, pID_fld, old2newflds={}):
     # Preprocess transect points (after running FCtoDF(transPts, xy=True))
+    # 0. Rename columns
+    if len(old2newflds):
+        df.rename(index=str, columns=old2newflds, inplace=True)
     # 1. set X and Y fields
     if 'SHAPE@X' in df.columns:
         df.drop(['seg_x', 'seg_y'], axis=1, inplace=True, errors='ignore')
