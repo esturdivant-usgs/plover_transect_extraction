@@ -84,14 +84,13 @@ def fieldExists(in_fc, fieldname):
             return True
     return False
 
-def CopyAndWipeFC(in_fc, out_fc):
+def CopyAndWipeFC(in_fc, out_fc, preserveflds=[]):
     # Make copy of transects and manually fill the gaps. Then select all the new transect and run the next piece of code.
     arcpy.CopyFeatures_management(in_fc, out_fc)
     # Replace values of all new transects
-    tranFields = []
-    for f in arcpy.ListFields(out_fc):
-        tranFields.append(f.name)
-    with arcpy.da.UpdateCursor(out_fc, tranFields[2:]) as cursor:
+    fldsToWipe = [f.name for f in arcpy.ListFields(out_fc) 
+                  if not f.required and not f.name in preserveflds] # list all fields that are not required in the FC (e.g. OID@)
+    with arcpy.da.UpdateCursor(out_fc, fldsToWipe) as cursor:
         for row in cursor:
             cursor.updateRow([None] * len(row))
     return out_fc
@@ -199,6 +198,20 @@ def ReplaceFields(fc, newoldfields, fieldtype='DOUBLE'):
                 print(arcpy.GetMessage(2))
                 pass
     return fc
+
+def DuplicateField(fc, fld, newname, ftype=False):
+    # Copy field values into field with new name
+    # 1. get field type
+    if not ftype:
+        flds = arcpy.ListFields(fc, fld)
+        ftype = flds.type
+    # 2. add new field
+    arcpy.AddField_management(fc, newname, ftype)
+    # 3. copy values
+    with arcpy.da.UpdateCursor(fc, [fld, newname]) as cursor:
+        for row in cursor:
+            cursor.updateRow([row[0], row[0]])
+    return(fc)
 
 def AddXYAttributes(fc, newfc, prefix, proj_code=26918):
     try:

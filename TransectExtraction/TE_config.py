@@ -10,12 +10,12 @@ if sys.platform == 'win32':
     import arcpy
 
 ############ Inputs #########################
-SiteYear_strings = {'site': 'Cedar',
-                    'year': '2014',
-                    'code': 'ci14',
+SiteYear_strings = {'site': 'Smith',
+                    'year': '2012',
+                    'code': 'si12',
                     'region': 'Delmarva',
-                    'MHW':0.55,
-                    'MLW':-0.56,
+                    'MHW':0.59,
+                    'MLW':-0.61,
                     'MTL':None}
 overwrite_Z = False
 
@@ -69,7 +69,6 @@ if sys.platform == 'win32':
 ########### Default inputs ##########################
 orig_extTrans = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
 orig_tidytrans = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
-orig_tidytrans = orig_extTrans
 extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 ShorelinePts = '{site}{year}_SLpts'.format(**SiteYear_strings)
 dhPts = '{site}{year}_DHpts'.format(**SiteYear_strings)				# Dune crest

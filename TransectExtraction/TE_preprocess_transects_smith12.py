@@ -5,92 +5,52 @@ Date: February 3, 2017
 
 This routine preprocesses extended transects with correctly sort_IDs
 """
-import arcpy
-import time
-import pythonaddins
+import os
 import sys
+import time
+import shutil
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 # path to TransectExtraction module
-sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction")
-from TransectExtraction import *
-from TE_config_Cedar2014 import *
+if sys.platform == 'win32':
+    script_path = r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction"
+    sys.path.append(script_path) # path to TransectExtraction module
+    import arcpy
+    import pythonaddins
+    from TE_functions_arcpy import *
+if sys.platform == 'darwin':
+    script_path = '/Users/esturdivant/GitHub/plover_transect_extraction/TransectExtraction'
+    sys.path.append(script_path)
+from TE_config import *
+from TE_functions import *
 
-archive_dir = r'\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\{region}\All_Sites\{region}_transects.gdb'.format(
-    **SYvars)
-orig_trans = "{region}_transects_orig".format(**SYvars)
-
-
-# Copy transects (extendedTrans) from archive directory
-fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;'\
-        'TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;'\
-        'Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;'\
-        'TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;'\
-        'LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;'\
-        'LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;'\
-        'LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;'\
-        'LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;'\
-        'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': orig_extTrans})
-arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, home, extendedTrans, field_mapping=fmap)
-
-# Copy transects (tidyTrans) from archive directory
-fmap = 'OBJECTID "OBJECTID" true true false 4 Long 0 0 ,First,#, {source}, OBJECTID,-1,-1;'\
-        'TransOrder "TransOrder" true true false 4 Long 0 0 ,First,#, {source}, TransOrder,-1,-1;'\
-        'Azimuth "Azimuth" true true false 8 Double 0 0 ,First,#, {source}, Azimuth,-1,-1;'\
-        'TransectId "TransectId" true true false 4 Long 0 0 ,First,#, {source}, TransectId,-1,-1;'\
-        'LRR "LRR" true true false 8 Double 0 0 ,First,#, {source}, LRR,-1,-1;'\
-        'LR2 "LR2" true true false 8 Double 0 0 ,First,#, {source}, LR2,-1,-1;'\
-        'LSE "LSE" true true false 8 Double 0 0 ,First,#, {source}, LSE,-1,-1;'\
-        'LCI90 "LCI90" true true false 8 Double 0 0 ,First,#, {source}, LCI90,-1,-1;'\
-        'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#, {source}, sort_ID,-1,-1'.format(**{'source': orig_tidytrans})
-arcpy.FeatureClassToFeatureClass_conversion(orig_tidytrans, home, extTrans_tidy, field_mapping=fmap)
 
 # Create extendedTrans, LT transects with gaps filled and lines extended
 # 1. Copy only the geometry of transects to use as material for filling gaps
-arcpy.env.workspace = archive_dir
+extTrans14 = '{site}2014_extTrans'.format(**SiteYear_strings)
+extTrans12 = '{site}2012_extTrans'.format(**SiteYear_strings)
+arcpy.env.workspace = os.path.join(site_dir, '2014', 'Smith2014.gdb')
+arcpy.FeatureClassToFeatureClass_conversion(extTrans14, home, extTrans12)
+arcpy.env.workspace = home
 trans_presort = 'trans_presort_temp'
-orig_trans = 'Smith2012_extTrans'
-CopyAndWipeFC(orig_trans, trans_presort, ['sort_ID'])
+CopyAndWipeFC(extTrans12, trans_presort, ['sort_ID'])
 pythonaddins.MessageBox("Now we'll stop so you can copy existing groups of transects to fill in the gaps. If possible avoid overlapping transects", "Created {}. Proceed with manual processing.".format(trans_presort), 0)
 exit()
-
-# Delete any NAT transects in the new transects layer
-# 2. Remove orig transects from manually created transects
-arcpy.SelectLayerByLocation_management(trans_presort, "ARE_IDENTICAL_TO",  # or "SHARE_A_LINE_SEGMENT_WITH"
-                                       orig_extTrans)
+# Remove manual transects from original
+arcpy.SelectLayerByLocation_management(extTrans12, "ARE_IDENTICAL_TO",  trans_presort)
 if int(arcpy.GetCount_management(trans_presort)[0]):
     # if old trans in new trans, delete them
-    arcpy.DeleteFeatures_management(trans_presort)
-# 3. Append relevant NAT transects to the new transects
-arcpy.SelectLayerByLocation_management(orig_extTrans, "INTERSECT", barrierBoundary)
-arcpy.Append_management(orig_extTrans, trans_presort)
-# Create lines to use to sort new transects
-sort_lines = 'sort_lines'
-arcpy.CreateFeatureclass_management(archive_dir, sort_lines, "POLYLINE", spatial_reference=arcpy.SpatialReference(proj_code))
-pythonaddins.MessageBox("Now we'll stop so you can check that the transects are ready to be sorted either from the bottom up or top down. If they need to be sorted in batches, add features to sort_lines.", "Stop for manual processing.".format(trans_presort), 0)
-exit()
+    arcpy.DeleteFeatures_management(extTrans12)
+arcpy.Append_management(trans_presort, extTrans12)
 
 
-# Sort
-trans_sort_1 = 'trans_sort_temp'
-extTrans_sort_ext = 'extTrans_temp'
-trans_sort_1, count1 = SpatialSort(trans_presort, trans_sort_1, "LR",
-                                   reverse_order=False, sortfield="sort_ID")
-SortTransectsFromSortLines(trans_presort, trans_sort_1, sort_line_list, sortfield='sort_ID',sort_corner='LL')
-# Extend
-ExtendLine(trans_sort_1, extTrans_sort_ext, extendlength, proj_code)
-if len(arcpy.ListFields(extTrans_sort_ext, 'OBJECTID*')) == 2:
-    ReplaceFields(extTrans_sort_ext, {'OBJECTID': 'OID@'})
-# Make sure transUIDfield counts from 1
-# Work with duplicate of original transects to preserve them
-arcpy.Sort_management(extTrans_sort_ext, extendedTrans, transUIDfield)
-with arcpy.da.SearchCursor(extendedTrans, transUIDfield) as cursor:
-    row = next(cursor)
-# If transUIDfield does not count from 1, adjust the values
-if row[0] > 1:
-    offset = row[0]-1
-    with arcpy.da.UpdateCursor(extendedTrans, transUIDfield) as cursor:
-        for row in cursor:
-            row[0] = row[0]-offset
-            cursor.updateRow(row)
+
+
+
+
+
+
 
 # TRANSECTS - extTrans_tidy
 if not t_trans:
@@ -196,15 +156,6 @@ if len(arcpy.ListFields(extendedTransects,'OBJECTID*')) == 2:
 """
 Previous code
 """
-#### Prepare transects ####
-# Make copy of transects and manually fill the gaps. Then select all the new transect and run the next piece of code.
-arcpy.CopyFeatures_management(old_transects,transects_presort)
-
-# Replace values of copied transects with Null.
-with arcpy.da.UpdateCursor(transects_presort, ['OBJECTID','TRANSORDER','LRR','LR2','LSE','LCI90']) as cursor:
-    for row in cursor:
-        cursor.updateRow([None, None, None, None, None, None])
-
 # To be completed after manual steps to fill gaps, making sure that the new transects have null values
 # Split the set of transects to ensure that the sort from __ corner is accurate.
 extTransects = PreprocessTransects(site,old_transects,sort_corner='LL')

@@ -33,12 +33,14 @@ if sys.platform == 'darwin':
 from TE_config import *
 from TE_functions import *
 
-######## Run ################################################################
+#%% ####### Run ################################################################
 start = time.clock()
 
 """
 SPATIAL: transects
 """
+extendedTransects...
+
 # 1: Add XYZ from DH, DL, & Arm points within 10m of transects *SPATIAL*
 inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts,
 'shoreline': shoreline, 'armorLines': armorLines}
@@ -55,7 +57,7 @@ Dist2Inlet(extendedTransects, shoreline, tID_fld, xpts='shoreline2trans')
 # 4: Clip transects, get barrier widths *SPATIAL*
 GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, IDfield=tID_fld, out_clipped_trans='trans_clipped2island')
 
-# OUTPUT: Create ID raster
+#%% # OUTPUT: Create ID raster
 arcpy.env.workspace = os.path.dirname(rst_transIDpath)
 if not arcpy.Exists(os.path.basename(rst_transIDpath)):
     outEucAll = arcpy.sa.EucAllocation(orig_tidytrans, maximum_distance=50,
@@ -63,6 +65,7 @@ if not arcpy.Exists(os.path.basename(rst_transIDpath)):
     outEucAll.save(os.path.basename(rst_transIDpath))
 arcpy.env.workspace = home
 
+#%%
 """
 SPATIAL: points (from transects)
 """
@@ -87,22 +90,41 @@ arcpy.sa.ExtractMultiValuesToPoints(transPts_presort, [[elevGrid_5m, 'ptZ'],
 #     pts_df = FCtoDF(transPts, id_fld=pID_fld)
 #     pts_df = pts_df.join(zpts_df)
 
+#%%
 """
 SPATIAL + PANDAS:
 """
+# Prepare Smith2014 for automatic processing
+DuplicateField(extendedTransects, 'TransOrder', tID_fld)
+DuplicateField(transPts, 'TransOrder', tID_fld)
+
+arcpy.FeatureClassToFeatureClass_conversion(extendedTransects, archive_dir, os.path.basename(orig_extTrans))
+DeleteExtraFields(orig_extTrans, [tID_fld])
+arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, archive_dir, os.path.basename(orig_tidytrans))
+arcpy.env.workspace = os.path.dirname(rst_transIDpath)
+if not arcpy.Exists(os.path.basename(rst_transIDpath)):
+    outEucAll = arcpy.sa.EucAllocation(orig_tidytrans, maximum_distance=50,
+                                       cell_size=cell_size, source_field=tID_fld)
+    outEucAll.save(os.path.basename(rst_transIDpath))
+arcpy.env.workspace = home
+#%% Manually adjust transects to remove overlap
+#%%
 # Convert transects and points to DataFrames
 trans_df = FCtoDF(extendedTransects, id_fld=tID_fld)
-trans_dfxy = FCtoDF(extendedTransects, xy=True, id_fld=tID_fld)
 pts_df = FCtoDF(transPts, xy=True, extra_fields=extra_fields + old_fields + repeat_fields)
+
 # Calculate DistSeg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
 pts_df = prep_points(pts_df, tID_fld, pID_fld, old2newflds)
 
 # # Save dataframes to open elsewhere or later
 trans_df.to_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
 pts_df.to_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
-# pts_df= pd.read_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
-# trans_df= pd.read_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
+#%% Pure Pandas ~~~
+pts_df= pd.read_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
+trans_df= pd.read_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
+pts_df = prep_points(pts_df, tID_fld, pID_fld, old2newflds)
 
+#%%
 #
 #FIXME: return all fields from input, not just xyz
 # dl_df = FCtoDF(dlPts, xy=True)
@@ -113,15 +135,12 @@ pts_df.to_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
 # DFtoFC(dl2trans, dl2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dl2trans.columns])
 # DFtoFC(dh2trans, dh2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dh2trans.columns])
 
-# Beach distances
+# Beach distances and elevation
 pts_df, bws_trans = calc_beach_width(pts_df, maxDH, tID_fld)
-trans_df = join_columns(trans_df, bws_trans)
-trans_dfxy = join_columns(trans_dfxy, bws_trans)
-
 # Aggregate ptZmhw to max and mean and join to transPts and extendedTransects
 pts_df, zmhw = aggregate_z(pts_df, MHW, tID_fld, 'ptZ')
+trans_df = join_columns(trans_df, bws_trans)
 trans_df = join_columns(trans_df, zmhw) # join new fields to transects
-trans_dfxy = join_columns(trans_dfxy, zmhw) # join new fields to transects
 pts_df = join_columns(pts_df, trans_df, tID_fld) # Join transect values to pts
 
 # # Save dataframes to open elsewhere or later
@@ -129,7 +148,7 @@ trans_df.to_pickle(os.path.join(out_dir, extTrans_null+'.pkl'))
 pts_df.to_pickle(os.path.join(out_dir, transPts_null+'.pkl'))
 # pts_df = pd.read_pickle(os.path.join(out_dir,transPts_null+'.pkl'))
 # trans_df = pd.read_pickle(os.path.join(out_dir, extTrans_null+'.pkl'))
-
+#%%
 """
 Outputs
 """
@@ -140,12 +159,10 @@ pts_df.to_csv(os.path.join(out_dir, transPts_fill +'_pd.csv'), na_rep=fill, inde
 print("The table ({}.csv) was exported as a CSV to {}. Now:\n\n"\
       "1. Open the CSV in Excel and Save as... a .xlsx file. \n"\
       "2. Open the XLS in Matlab to check for errors! ".format(transPts_fill, out_dir))
-
+#%%
 # Join DF to raster
-# bw_rst = JoinDFtoRaster(bws_trans, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld)
 bw_rst = JoinDFtoRaster_setvalue(bws_trans, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld, val_fld='uBW')
-bw_rst = JoinDFtoRaster_setvalue(trans_df, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld, val_fld='uBW')
-# rst_transgrid = JoinDFtoRaster(trans_df, rst_transIDpath, rst_transgrid_path, fill=fill, IDfield=tID_fld)
+# bw_rst = JoinDFtoRaster_setvalue(trans_df, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld, val_fld='uBW')
 
 # Convert pts_df to FC, both pts and trans (pts_fc, trans_fc)
 # ** Takes a while **
@@ -162,7 +179,13 @@ ReplaceValueInFC(extTrans_null, fill, None)
 
 
 # Export the files used to run the process to code file in home dir
-shutil.copy(os.path.join(script_path, 'TE_master_rework.py'), os.path.join(code_dir, 'TE_master_rework.py')
-shutil.copy(os.path.join(script_path, 'TE_config.py'), os.path.join(code_dir, 'TE_config.py')
-shutil.copy(os.path.join(script_path, 'TE_functions.py'), os.path.join(code_dir, 'TE_functions.py')
-shutil.copy(os.path.join(script_path, 'TE_functions_arcpy.py'), os.path.join(code_dir, 'TE_functions_arcpy.py')
+# os.makedirs(code_dir, exist_ok=True)
+try:
+    os.makedirs(code_dir)
+except OSError:
+    if not os.path.isdir(code_dir):
+        raise
+shutil.copy(os.path.join(script_path, 'TE_master_rework.py'), os.path.join(code_dir, 'TE_master_rework.py'))
+shutil.copy(os.path.join(script_path, 'TE_config.py'), os.path.join(code_dir, 'TE_config.py'))
+shutil.copy(os.path.join(script_path, 'TE_functions.py'), os.path.join(code_dir, 'TE_functions.py'))
+shutil.copy(os.path.join(script_path, 'TE_functions_arcpy.py'), os.path.join(code_dir, 'TE_functions_arcpy.py'))
