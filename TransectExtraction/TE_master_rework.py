@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 '''
 Deep dive Transect Extraction
 Requires: python 2.7, Arcpy
@@ -39,9 +39,11 @@ start = time.clock()
 """
 SPATIAL: transects
 """
-extendedTransects...
-
+# extendedTransects...
+# DeleteTempFiles()
 # 1: Add XYZ from DH, DL, & Arm points within 10m of transects *SPATIAL*
+if not arcpy.Exists(shoreline):
+    CreateShoreBetweenInlets(barrierBoundary, inletLines, shoreline, ShorelinePts, proj_code)
 inPtsDict={'ShorelinePts': ShorelinePts, 'dhPts': dhPts, 'dlPts': dlPts,
 'shoreline': shoreline, 'armorLines': armorLines}
 # FIXME: this could be performed mostly with PANDAS
@@ -57,20 +59,13 @@ Dist2Inlet(extendedTransects, shoreline, tID_fld, xpts='shoreline2trans')
 # 4: Clip transects, get barrier widths *SPATIAL*
 GetBarrierWidths(extendedTransects, barrierBoundary, shoreline, IDfield=tID_fld, out_clipped_trans='trans_clipped2island')
 
-#%% # OUTPUT: Create ID raster
-arcpy.env.workspace = os.path.dirname(rst_transIDpath)
-if not arcpy.Exists(os.path.basename(rst_transIDpath)):
-    outEucAll = arcpy.sa.EucAllocation(orig_tidytrans, maximum_distance=50,
-                                       cell_size=cell_size, source_field=tID_fld)
-    outEucAll.save(os.path.basename(rst_transIDpath))
-arcpy.env.workspace = home
-
 #%%
 """
 SPATIAL: points (from transects)
 """
 # 5: Create Transect Segment points and sample data *SPATIAL*
 # Split transects into points
+# After XTools divides dataset, run FC to numpy with explode to points?
 SplitTransectsToPoints(extTrans_tidy, transPts_presort, barrierBoundary,
                        home, clippedtrans='trans_clipped2island')
 
@@ -94,27 +89,10 @@ arcpy.sa.ExtractMultiValuesToPoints(transPts_presort, [[elevGrid_5m, 'ptZ'],
 """
 SPATIAL + PANDAS:
 """
-# Prepare Smith2014 for automatic processing
-DuplicateField(extendedTransects, 'TransOrder', tID_fld)
-DuplicateField(transPts, 'TransOrder', tID_fld)
-
-arcpy.FeatureClassToFeatureClass_conversion(extendedTransects, archive_dir, os.path.basename(orig_extTrans))
-DeleteExtraFields(orig_extTrans, [tID_fld])
-arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, archive_dir, os.path.basename(orig_tidytrans))
-arcpy.env.workspace = os.path.dirname(rst_transIDpath)
-if not arcpy.Exists(os.path.basename(rst_transIDpath)):
-    outEucAll = arcpy.sa.EucAllocation(orig_tidytrans, maximum_distance=50,
-                                       cell_size=cell_size, source_field=tID_fld)
-    outEucAll.save(os.path.basename(rst_transIDpath))
-arcpy.env.workspace = home
-#%% Manually adjust transects to remove overlap
 #%%
 # Convert transects and points to DataFrames
 trans_df = FCtoDF(extendedTransects, id_fld=tID_fld)
 pts_df = FCtoDF(transPts, xy=True, extra_fields=extra_fields + old_fields + repeat_fields)
-
-# Calculate DistSeg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
-pts_df = prep_points(pts_df, tID_fld, pID_fld, old2newflds)
 
 # # Save dataframes to open elsewhere or later
 trans_df.to_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
@@ -122,24 +100,19 @@ pts_df.to_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
 #%% Pure Pandas ~~~
 pts_df= pd.read_pickle(os.path.join(out_dir,'pre_'+ transPts_null+'.pkl'))
 trans_df= pd.read_pickle(os.path.join(out_dir, 'pre_'+ extTrans_null+'.pkl'))
-pts_df = prep_points(pts_df, tID_fld, pID_fld, old2newflds)
+
+# Calculate DistSeg, Dist_MHWbay, DistSegDH, DistSegDL, DistSegArm)
+pts_df = prep_points(pts_df, tID_fld, pID_fld, MHW)
+trans_df = calc_trans_distances(trans_df)
+pts_df = calc_trans_distances(pts_df)
 
 #%%
-#
-#FIXME: return all fields from input, not just xyz
-# dl_df = FCtoDF(dlPts, xy=True)
-# dh_df = FCtoDF(dhPts, xy=True)
-# pts_df, dl2trans = dunes_to_trans(pts_df, dl_df)#, tID_fld=tID_fld, fields='all', zfld='dlow_z')
-# pts_df, dh2trans = dunes_to_trans(pts_df, dh_df, tID_fld=tID_fld, fields='all', zfld='dhi_z')
-# dl2trans_fc = 'test_DL2trans_fromPD'
-# DFtoFC(dl2trans, dl2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dl2trans.columns])
-# DFtoFC(dh2trans, dh2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dh2trans.columns])
-
 # Beach distances and elevation
 pts_df, bws_trans = calc_beach_width(pts_df, maxDH, tID_fld)
+trans_df = join_columns(trans_df, bws_trans)
+
 # Aggregate ptZmhw to max and mean and join to transPts and extendedTransects
 pts_df, zmhw = aggregate_z(pts_df, MHW, tID_fld, 'ptZ')
-trans_df = join_columns(trans_df, bws_trans)
 trans_df = join_columns(trans_df, zmhw) # join new fields to transects
 pts_df = join_columns(pts_df, trans_df, tID_fld) # Join transect values to pts
 
@@ -159,8 +132,16 @@ pts_df.to_csv(os.path.join(out_dir, transPts_fill +'_pd.csv'), na_rep=fill, inde
 print("The table ({}.csv) was exported as a CSV to {}. Now:\n\n"\
       "1. Open the CSV in Excel and Save as... a .xlsx file. \n"\
       "2. Open the XLS in Matlab to check for errors! ".format(transPts_fill, out_dir))
-#%%
-# Join DF to raster
+
+#%% # OUTPUT: Create ID raster
+# arcpy.env.workspace = os.path.dirname(rst_transIDpath)
+# if not arcpy.Exists(os.path.basename(rst_transIDpath)):
+#     outEucAll = arcpy.sa.EucAllocation(orig_tidytrans, maximum_distance=50,
+#                                        cell_size=cell_size, source_field=tID_fld)
+#     outEucAll.save(os.path.basename(rst_transIDpath))
+# arcpy.env.workspace = home
+
+#%% Join DF to ID raster
 bw_rst = JoinDFtoRaster_setvalue(bws_trans, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld, val_fld='uBW')
 # bw_rst = JoinDFtoRaster_setvalue(trans_df, rst_transIDpath, rst_bwgrid_path, fill=fill, id_fld=tID_fld, val_fld='uBW')
 

@@ -108,6 +108,7 @@ if not t_trans:
     arcpy.Intersect_analysis([extendedTransects, overlapTrans_lines], trans_x,
                              'ALL', output_type="POINT")
     arcpy.SplitLineAtPoint_management(extendedTransects, trans_x, extTrans_tidy)
+    print("MANUALLY: Select transect segments to be deleted. ")
     exit()
 if not t_trans:
     arcpy.DeleteFeatures_management(extTrans_tidy)

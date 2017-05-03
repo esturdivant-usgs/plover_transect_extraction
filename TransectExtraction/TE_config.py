@@ -10,13 +10,22 @@ if sys.platform == 'win32':
     import arcpy
 
 ############ Inputs #########################
-SiteYear_strings = {'site': 'Smith',
+SiteYear_strings = {'site': 'Cedar',
                     'year': '2012',
-                    'code': 'si12',
+                    'code': 'cei12',
                     'region': 'Delmarva',
-                    'MHW':0.59,
-                    'MLW':-0.61,
+                    'MHW':0.34,
+                    'MLW':-0.56,
                     'MTL':None}
+
+# SiteYear_strings = {'site': 'Smith',
+#                     'year': '2012',
+#                     'code': 'smi12',
+#                     'region': 'Delmarva',
+#                     'MHW':0.34,
+#                     'MLW':-0.56,
+#                     'MTL':None}
+
 overwrite_Z = False
 
 ########### Default Values ##########################
@@ -45,7 +54,7 @@ site_dir = os.path.join(volume, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
 out_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extracted_Data')
 code_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extraction_code')
 working_dir = os.path.join(site_dir, SiteYear_strings['year'], 'working')
-archive_dir = os.path.join(site_dir, 'All_Years', SiteYear_strings['site']+'_transects.gdb')
+trans_dir = os.path.join(site_dir, 'All_Years', SiteYear_strings['site']+'_transects.gdb')
 home_gdb = '{site}{year}.gdb'.format(**SiteYear_strings)
 home = os.path.join(site_dir, SiteYear_strings['year'], home_gdb)
 
@@ -67,8 +76,9 @@ if sys.platform == 'win32':
     utmSR = arcpy.SpatialReference(proj_code)
 
 ########### Default inputs ##########################
-orig_extTrans = os.path.join(archive_dir, '{site}_extTrans'.format(**SiteYear_strings))
-orig_tidytrans = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
+orig_trans = os.path.join(trans_dir, '{site}_LTorig'.format(**SiteYear_strings))
+orig_extTrans = os.path.join(trans_dir, '{site}_extTrans'.format(**SiteYear_strings))
+orig_tidytrans = os.path.join(trans_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 ShorelinePts = '{site}{year}_SLpts'.format(**SiteYear_strings)
 dhPts = '{site}{year}_DHpts'.format(**SiteYear_strings)				# Dune crest
@@ -78,7 +88,7 @@ inletLines = '{site}{year}_inletLines'.format(**SiteYear_strings) # manually cre
 armorLines = '{site}{year}_armor'.format(**SiteYear_strings)
 barrierBoundary = '{site}{year}_bndpoly_2sl'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
 elevGrid = '{site}{year}_DEM'.format(**SiteYear_strings)				# Elevation
-elevGrid_5m = elevGrid+'_5m_utm'				# Elevation
+elevGrid_5m = elevGrid+'_5m'				# Elevation
 
 ############## Outputs ###############################
 dh2trans = '{site}{year}_DH2trans'.format(**SiteYear_strings)							# DHigh within 10m
@@ -105,12 +115,12 @@ transPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 transPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = 'transPts_ZmhwSlp'
 out_stats = os.path.join(home,"avgZ_byTransect")
-extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
+extTrans_tidy_archive = os.path.join(trans_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 transPts_presort = 'transPts_presort'
 
-rst_transIDpath = os.path.join(archive_dir, "{site}_rstTransID".format(**SiteYear_strings))
+rst_transIDpath = os.path.join(trans_dir, "{site}_rstTransID".format(**SiteYear_strings))
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
 rst_transgrid_path = os.path.join(out_dir, "{code}_trans".format(**SiteYear_strings))
 rst_bwgrid_path = os.path.join(out_dir, "{code}_ubw".format(**SiteYear_strings))
@@ -139,7 +149,7 @@ trans_flds_arc = ['SL_Lat', 'SL_Lon', 'SL_x', 'SL_y', 'Bslope',
     'DL_Lat', 'DL_Lon', 'DL_x', 'DL_y', 'DL_z', 'DL_zMHW',
     'DH_Lat', 'DH_Lon', 'DH_x', 'DH_y', 'DH_z', 'DH_zMHW',
     'Arm_Lat', 'Arm_Lon', 'Arm_x', 'Arm_y', 'Arm_z', 'Arm_zMHW',
-    'DistDH', 'DistDL', 'DistArm',
+    #'DistDH', 'DistDL', 'DistArm',
     'Dist2Inlet', 'WidthPart', 'WidthLand', 'WidthFull']
 trans_flds_pd = ['uBW', 'uBH', 'ub_feat', 'mean_Zmhw', 'max_Zmhw']
 pt_flds_arc = ['ptZ', 'ptSlp']
@@ -174,10 +184,10 @@ calculated = ['DL_zMHW', 'DH_zMHW', 'Arm_zMHW',
 #     'DistDH', 'DistDL', 'DistArm',
 #     'Dist2Inlet', 'WidthPart', 'WidthLand', 'WidthFull']
 # pt_flds_arc = ['ptZ', 'ptSlp']
-
-old2newflds = {'SL_easting': 'SL_x', 'SL_northing': 'SL_y',
-              'DL_easting': 'DL_x', 'DL_northing': 'DL_y',
-              'DH_easting': 'DH_x', 'DH_northing': 'DH_y',
-              'Arm_easting': 'Arm_x', 'Arm_northing': 'Arm_y',
-              'beach_h_MLW': 'bh_mlw', 'beachWidth_MLW': 'bw_mlw',
-              'PointZ':'ptZ', 'PointZ_mhw':'ptZmhw', 'PointSlp':'ptSlp'}
+#
+# old2newflds = {'SL_easting': 'SL_x', 'SL_northing': 'SL_y',
+#               'DL_easting': 'DL_x', 'DL_northing': 'DL_y',
+#               'DH_easting': 'DH_x', 'DH_northing': 'DH_y',
+#               'Arm_easting': 'Arm_x', 'Arm_northing': 'Arm_y',
+#               'beach_h_MLW': 'bh_mlw', 'beachWidth_MLW': 'bw_mlw',
+#               'PointZ':'ptZ', 'PointZ_mhw':'ptZmhw', 'PointSlp':'ptSlp'}

@@ -43,7 +43,62 @@ def join_columns(df1, df2, id_fld='ID', how='outer'):
                   .join(df2, how=how))
     return(df1)
 
-def prep_points(df, tID_fld, pID_fld, old2newflds={}):
+def adjust2mhw(df, MHW, fldlist=['DH_z', 'DL_z', 'Arm_z']):
+    for fld in fldlist:
+        df = (df.drop(fld+'mhw', axis=1, errors='ignore')
+                .join(df[fld].subtract(MHW), rsuffix='mhw'))
+    return(df)
+
+def sort_pts(df, tID_fld, pID_fld='SplitSort'):
+    # Calculate pt distance from shore; use that to sort pts and create pID_fld
+    # 1. set X and Y fields
+    if 'SHAPE@X' in df.columns:
+        df.drop(['seg_x', 'seg_y'], axis=1, inplace=True, errors='ignore')
+        df.rename(index=str, columns={'SHAPE@X':'seg_x', 'SHAPE@Y':'seg_y'}, inplace=True)
+    # 2. calculate pt distance to MHW
+    dist_seg = np.hypot(df.seg_x - df.SL_x, df.seg_y - df.SL_y)
+    df = join_columns(df, pd.DataFrame({'Dist_Seg': dist_seg}, index=df.index))
+    # 3. Sort and create pID_fld (SplitSort)
+    df = df.sort_values(by=[tID_fld, 'Dist_Seg']).reset_index(drop=True)
+    df.index.rename(pID_fld, inplace=True)
+    df.reset_index(drop=False, inplace=True)
+    return(df)
+
+def calc_trans_distances(df):
+    sl2dh = np.hypot(df.SL_x - df.DH_x, df.SL_y - df.DH_y)
+    sl2dl = np.hypot(df.SL_x - df.DL_x, df.SL_y - df.DL_y)
+    sl2arm = np.hypot(df.SL_x - df.Arm_x, df.SL_y - df.Arm_y)
+    df = join_columns(df, pd.DataFrame({'DistDH': sl2dh,
+                                        'DistDL': sl2dl,
+                                        'DistArm': sl2arm
+                                        }, index=df.index))
+    return(df)
+
+def calc_pt_distances(df):
+    pt2dh = np.hypot(df.seg_x - df.DH_x, df.seg_y - df.DH_y)
+    pt2dl = np.hypot(df.seg_x - df.DL_x, df.seg_y - df.DL_y)
+    pt2arm = np.hypot(df.seg_x - df.Arm_x, df.seg_y - df.Arm_y)
+    df = join_columns(df, pd.DataFrame({'DistSegDH': pt2dh,
+                                        'DistSegDL': pt2dl,
+                                        'DistSegArm': pt2arm,
+                                        'Dist_MHWbay': df.WidthPart - df.Dist_Seg
+                                        }, index=df.index))
+    return(df)
+
+def prep_points(df, tID_fld, pID_fld, MHW, old2newflds={}):
+    # Preprocess transect points (after running FCtoDF(transPts, xy=True))
+    # 0. Rename columns
+    if len(old2newflds):
+        df.rename(index=str, columns=old2newflds, inplace=True)
+    # Calculate pt distance from shore; use that to sort pts and create pID_fld (SplitSort)
+    df = sort_pts(df, tID_fld, pID_fld)
+    # Calculate pt distance from dunes and bayside shore
+    df = calc_pt_distances(df)
+    df = adjust2mhw(df, MHW)
+    df = calc_trans_distances(df)
+    return(df)
+
+def prep_points_v1(df, tID_fld, pID_fld, old2newflds={}):
     # Preprocess transect points (after running FCtoDF(transPts, xy=True))
     # 0. Rename columns
     if len(old2newflds):
@@ -54,11 +109,17 @@ def prep_points(df, tID_fld, pID_fld, old2newflds={}):
         df.rename(index=str, columns={'SHAPE@X':'seg_x', 'SHAPE@Y':'seg_y'}, inplace=True)
     # 2. calculate distances
     dist_seg = np.hypot(df.seg_x - df.SL_x, df.seg_y - df.SL_y)
+    dist_dh = np.hypot(df.seg_x - df.DH_x, df.seg_y - df.DH_y)
+    dist_dl = np.hypot(df.seg_x - df.DL_x, df.seg_y - df.DL_y)
+    dist_arm = np.hypot(df.seg_x - df.Arm_x, df.seg_y - df.Arm_y)
     df = join_columns(df, pd.DataFrame({'Dist_Seg': dist_seg,
-                                        'Dist_MHWbay': df.WidthPart - dist_seg,
-                                        'DistSegDH': dist_seg - df.DistDH,
-                                        'DistSegDL': dist_seg - df.DistDL,
-                                        'DistSegArm': dist_seg - df.DistArm
+                                        'DistSegDH': dist_dh,
+                                        'DistSegDL': dist_dl,
+                                        'DistSegArm': dist_arm,
+                                        'Dist_MHWbay': df.WidthPart - dist_seg
+                                        # 'DistSegDH': dist_seg - df.DistDH,
+                                        # 'DistSegDL': dist_seg - df.DistDL,
+                                        # 'DistSegArm': dist_seg - df.DistArm
                                         }, index=df.index))
     # 3. Sort and create pID_fld (SplitSort)
     df = df.sort_values(by=[tID_fld, 'Dist_Seg']).reset_index(drop=True)
@@ -106,17 +167,18 @@ def calc_beach_width(pts_df, maxDH=2.5, tID_fld='sort_ID'):
     uBW = pd.Series(np.nan, index=trans_df.index, name='uBW')
     uBH = pd.Series(np.nan, index=trans_df.index, name='uBH')
     feat = pd.Series(np.nan, index=trans_df.index, name='ub_feat') # dtype will 'object'
+    # loop through transects
     for tID, tran in trans_df.iterrows():
         # get upper limit of beach (dlow or equivalent)
         if not np.isnan(tran.DL_x):
             iDL = {'x':tran['DL_x'], 'y':tran['DL_y'],
-                   'z':tran['DL_zMHW'], 'ub_feat':'DL'}
-        elif tran.DH_zMHW <= maxDH:
+                   'z':tran['DL_zmhw'], 'ub_feat':'DL'}
+        elif tran.DH_zmhw <= maxDH:
             iDL = {'x':tran['DH_x'], 'y':tran['DH_y'],
-                   'z':tran['DH_zMHW'], 'ub_feat':'DH'}
+                   'z':tran['DH_zmhw'], 'ub_feat':'DH'}
         elif not np.isnan(tran.Arm_x):
             iDL = {'x':tran['Arm_x'], 'y':tran['Arm_y'],
-                   'z':tran['Arm_zMHW'], 'ub_feat':'Arm'}
+                   'z':tran['Arm_zmhw'], 'ub_feat':'Arm'}
         else: # If there is no DL equivalent, BW and BH = null
             uBW[tID] = uBH[tID] = np.nan
             continue
@@ -133,12 +195,12 @@ def calc_beach_width(pts_df, maxDH=2.5, tID_fld='sort_ID'):
         if np.isnan(ptDL['x']):
             print('ptDL["x"] is NaN')
             if not np.isnan(tran.Arm_x): # elseif isnan(Ae) == 0 & isnan(DLe) == 1,
-                ptDL = {'x':tran['Arm_x'], 'y':tran['Arm_y'], 'z':tran['Arm_zMHW'], 'ub_feat':'Arm'}
+                ptDL = {'x':tran['Arm_x'], 'y':tran['Arm_y'], 'z':tran['Arm_zmhw'], 'ub_feat':'Arm'}
         elif not np.isnan(tran.Arm_x): # if isnan(Ae) == 0 & isnan(DLe) == 0,
             bw1 = np.hypot(tran.SL_x - ptDL['x'], tran.SL_y - ptDL['y'])
             bw2 = np.hypot(tran.SL_x-tran.Arm_x, tran.SL_y-tran.Arm_y)
             if bw2 < bw1:
-                ptDL = {'x':tran['Arm_x'], 'y':tran['Arm_y'], 'z':tran['Arm_zMHW'], 'ub_feat':'Arm'}
+                ptDL = {'x':tran['Arm_x'], 'y':tran['Arm_y'], 'z':tran['Arm_zmhw'], 'ub_feat':'Arm'}
         # Get beach width
         uBW[tID] = np.hypot(tran.SL_x - ptDL['x'], tran.SL_y - ptDL['y']) # problem: Xout
         uBH[tID] = ptDL['z'] # Use elevation from transPt instead of from dune point?
