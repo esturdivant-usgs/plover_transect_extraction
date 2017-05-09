@@ -300,6 +300,7 @@ def ProcessDEM(elevGrid, elevGrid_5m, utmSR):
         elevGrid2 = elevGrid
     outAggreg = arcpy.sa.Aggregate(elevGrid2,5,'MEAN')
     outAggreg.save(elevGrid_5m)
+    return(elevGrid_5m)
 
 def ExtendLine(fc, new_fc, distance, proj_code=26918):
     # From GIS stack exchange http://gis.stackexchange.com/questions/71645/a-tool-or-way-to-extend-line-by-specified-distance
@@ -316,10 +317,11 @@ def ExtendLine(fc, new_fc, distance, proj_code=26918):
     # Project transects to UTM
     if not arcpy.Describe(fc).spatialReference.factoryCode == proj_code:
         print 'Projecting {} to UTM'.format(fc)
-        arcpy.Project_management(fc, new_fc, arcpy.SpatialReference(proj_code))  # project to GCS
+        arcpy.Project_management(fc, fc+'utm_temp', arcpy.SpatialReference(proj_code))  # project to PCS
+        arcpy.FeatureClassToFeatureClass_conversion(fc+'utm_temp', arcpy.env.workspace, new_fc)
     else:
         print '{} is already projected in UTM.'.format(fc)
-        arcpy.FeatureClassToFeatureClass_conversion(fc, arcpy.env.workspace,new_fc)
+        arcpy.FeatureClassToFeatureClass_conversion(fc, arcpy.env.workspace, new_fc)
     #OID is needed to determine how to break up flat list of data by feature.
     coordinates = [[row[0], row[1]] for row in
                    arcpy.da.SearchCursor(fc, ["OID@", "SHAPE@XY"],
@@ -335,14 +337,30 @@ def ExtendLine(fc, new_fc, distance, proj_code=26918):
     newvert = [newcoord(y, float(distance)) for y in zip(*[iter(lastpoint)]*2)]
     j = 0
     with arcpy.da.UpdateCursor(new_fc, "SHAPE@XY", explode_to_points=True) as cursor:
-        for i,row in enumerate(cursor):
+        for i, row in enumerate(cursor):
             if i+1 in vertcounts:
                 row[0] = newvert[j]
                 j+=1
-                cursor.updateRow(row)
+                cursor.updateRow(row) #FIXME: If the FC was projected as part of the function, returns RuntimeError: "The spatial index grid size is invalid."
     return new_fc
 
+def PrepTransects_part2(trans_presort, LTextended, barrierBoundary='', trans_sort_1='trans_sort_temp', sort_corner="LR"):
+    # 2. Remove orig transects from manually created transects # Delete any NAT transects in the new transects layer
+    arcpy.SelectLayerByLocation_management(trans_presort, "ARE_IDENTICAL_TO",  # or "SHARE_A_LINE_SEGMENT_WITH"
+                                           LTextended)
+    if int(arcpy.GetCount_management(trans_presort)[0]):
+        # if old trans in new trans, delete them
+        arcpy.DeleteFeatures_management(trans_presort)
+    # 3. Append relevant NAT transects to the new transects
+    if len(barrierBoundary)>0:
+        arcpy.SelectLayerByLocation_management(LTextended, "INTERSECT", barrierBoundary)
+    arcpy.Append_management(LTextended, trans_presort)
+    # trans_sort_1, count1 = SpatialSort(trans_presort, trans_sort_1, sort_corner,
+    #                                    reverse_order=False, sortfield="sort_ID")
+    return(trans_presort)
+
 def SpatialSort(in_fc, out_fc, sort_corner='LL', reverse_order=False, startcount=0, sortfield='sort_ID'):
+    # Sort transects and assign values to new sortfield; option to assign values in reverse order
     arcpy.Sort_management(in_fc,out_fc,[['Shape','ASCENDING']],sort_corner) # Sort from lower left - this
     try:
         arcpy.AddField_management(out_fc,sortfield,'SHORT')
@@ -370,30 +388,48 @@ def SpatialSort_v1(in_fc,out_fc,sort_corner='LL',sortfield='sort_ID'):
             cursor.updateRow([row[0],row[0]])
     return out_fc
 
-def PrepTransects_part2(trans_presort, LTextended, barrierBoundary, trans_sort_1='trans_sort_temp', sort_corner="LR"):
-    # 2. Remove orig transects from manually created transects # Delete any NAT transects in the new transects layer
-    arcpy.SelectLayerByLocation_management(trans_presort, "ARE_IDENTICAL_TO",  # or "SHARE_A_LINE_SEGMENT_WITH"
-                                           LTextended)
-    if int(arcpy.GetCount_management(trans_presort)[0]):
-        # if old trans in new trans, delete them
-        arcpy.DeleteFeatures_management(trans_presort)
-    # 3. Append relevant NAT transects to the new transects
-    arcpy.SelectLayerByLocation_management(LTextended, "INTERSECT", barrierBoundary)
-    arcpy.Append_management(LTextended, trans_presort)
-    trans_sort_1, count1 = SpatialSort(trans_presort, trans_sort_1, sort_corner,
-                                       reverse_order=False, sortfield="sort_ID")
-    return(trans_sort_1, count1)
+def SortTransectsFromSortLines(in_fc, out_fc, sort_lines=[], sortfield='sort_ID', sort_corner='LL'):
+    # Alternative to SpatialSort() when sorting must be done in spatial groups
+    try:
+        arcpy.AddField_management(in_fc, sortfield, 'SHORT')
+    except:
+        pass
+    if not len(sort_lines):
+        base_fc, ct = SortTransectsByFeature(in_fc, 0, sort_lines, [1, sort_corner])
+    else:
+        sort_lines_arr = arcpy.da.FeatureClassToNumPyArray(sort_lines, ['sort', 'sort_corn'])
+        base_fc, ct = SortTransectsByFeature(in_fc, 0, sort_lines, sort_lines_arr[0])
+        for row in sort_lines_arr[1:]:
+            next_fc, ct = SortTransectsByFeature(in_fc, ct, sort_lines, row)
+            arcpy.Append_management(next_fc, base_fc)
+    # arcpy.FeatureClassToFeatureClass_conversion(base_fc, arcpy.env.workspace, out_fc)
+    SetStartValue(base_fc, out_fc, sortfield, start=1)
+    return(out_fc)
 
-def SortTransectsFromSortLines(in_fc, base_fc, sort_line_list, sortfield='sort_ID',sort_corner='LL'):
+def SortTransectsByFeature(in_fc, new_ct, sort_lines=[], sortrow=[0, 'LL']):
+    out_fc = 'trans_sort{}_temp'.format(new_ct)
+    if len(sort_lines):
+        arcpy.SelectLayerByAttribute_management(sort_lines, "NEW_SELECTION", "sort = {}".format(sortrow[0]))
+        arcpy.SelectLayerByLocation_management(in_fc, overlap_type='INTERSECT', select_features=sort_lines)
+    arcpy.Sort_management(in_fc, out_fc, [['Shape', 'ASCENDING']], sortrow[1]) # Sort from lower left - this
+    ct = 0
+    with arcpy.da.UpdateCursor(out_fc, ['OID@', sortfield]) as cursor:
+        for row in cursor:
+            ct+=1
+            cursor.updateRow([row[0], row[0]+new_ct])
+    return(out_fc, ct)
+
+def SortTransectsFromSortLines_v1(in_fc, base_fc, sort_line_list, sortfield='sort_ID',sort_corner='LL'):
     # in_fc = transects to be sorted
     # base_fc =
     try:
-        arcpy.AddField_management(in_fc,sortfield,'SHORT')
+        arcpy.AddField_management(in_fc, sortfield, 'SHORT')
     except:
         pass
+    # First run to initialize sorted transects (base_fc)
     sort_line = sort_line_list[0]
     arcpy.SelectLayerByLocation_management(in_fc, overlap_type='INTERSECT', select_features=sort_line)
-    arcpy.Sort_management(in_fc,base_fc,[['Shape','ASCENDING']],sort_corner) # Sort from lower left - this
+    arcpy.Sort_management(in_fc, base_fc,[['Shape','ASCENDING']],sort_corner) # Sort from lower left - this
     ct = 0
     with arcpy.da.UpdateCursor(base_fc,['OID@',sortfield]) as cursor:
         for row in cursor:
@@ -408,7 +444,7 @@ def SortTransectsFromSortLines(in_fc, base_fc, sort_line_list, sortfield='sort_I
             for row in cursor:
                 ct+=1
                 cursor.updateRow([row[0],row[0]+new_ct])
-        arcpy.Append_management(out_fc,base_fc)
+        arcpy.Append_management(out_fc, base_fc)
     return base_fc
 
 def SetStartValue(trans_sort_1, extendedTrans, tID_fld, start=1):
@@ -539,7 +575,7 @@ def CombineShorelinePolygons(bndMTL, bndMHW, inletLines, ShorelinePts, bndpoly):
     arcpy.SelectLayerByLocation_management(split_temp, "INTERSECT", ShorelinePts, '#', "NEW_SELECTION") # Select MHW-MLW area on oceanside, based on intersection with shoreline points
     #Why Erase instead of union between bndMHW and split_temp? or Erase from bndMTL?
     # Union didn't work when I tried it manually. Append worked, after copying bndMHW to bndpoly
-    arcpy.Erase_analysis(union,split_temp,union_2) # Erase from union layer the selected shoreline area in split
+    arcpy.Erase_analysis(union, split_temp, union_2) # Erase from union layer the selected shoreline area in split
     arcpy.Dissolve_management(union_2, bndpoly, multi_part='SINGLE_PART') # Dissolve all features in union_2 to single part polygons
     print 'Select extra features for deletion\nRecommended technique: select the polygon/s to keep and then Switch Selection\n'
     return bndpoly
@@ -631,7 +667,7 @@ def JoinFields(targetfc, sourcefile, dest2src_fields, joinfields=['sort_ID']):
     #arcpy.Delete_management(os.path.join(arcpy.env.workspace,sourcefile))
     return targetfc
 
-def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, pt2trans_disttolerance):
+def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, disttolerance=25):
     # shl2trans = 'SHL2trans'
     # shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
     shoreline = inPtsDict['shoreline']
@@ -642,13 +678,15 @@ def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, pt
     # Add lat lon and x y fields to create SHL2trans
     # Add slope from ShorelinePts to shoreline intersection with transects (which replace the XY values from the original shoreline points)
     ReplaceFields(inPtsDict['ShorelinePts'],{'ID':'OID@'},'SINGLE')
-    arcpy.SpatialJoin_analysis(shl2trans,inPtsDict['ShorelinePts'], 'join_temp','#','#','#',"CLOSEST",pt2trans_disttolerance) # create join_temp
+    arcpy.SpatialJoin_analysis(shl2trans, inPtsDict['ShorelinePts'], 'join_temp','#','#','#',"CLOSEST", '{} METERS'.format(disttolerance)) # create join_temp
     arcpy.JoinField_management(shl2trans,IDfield,'join_temp',IDfield,'slope') # join slope from join_temp (from ShorelinePts) with SHL2trans points
     arcpy.DeleteField_management(shl2trans,'Bslope') #In case of reprocessing
     arcpy.AlterField_management(shl2trans,'slope','Bslope','Bslope')
     arcpy.DeleteField_management(extendedTransects, shlfields) #In case of reprocessing
     arcpy.JoinField_management(extendedTransects, IDfield, shl2trans, IDfield, shlfields)
     return extendedTransects
+
+
 
 def ArmorLineToTransects(in_trans, armorLines, IDfield, proj_code, elevGrid_5m):
     arm2trans="arm2trans"
@@ -754,7 +792,6 @@ def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, IDfield, proj_co
     # Add Feature Positions To Transects, XYZ from DH, DL, & Arm points within 10m of transects
     # Requires DH, DL, and SHL points, NA transects
     startPart1 = time.clock()
-    tempfile = 'trans_temp'
     if not in_trans == out_fc:
         arcpy.FeatureClassToFeatureClass_conversion(in_trans, home, out_fc)
     # Shoreline
@@ -764,10 +801,8 @@ def AddFeaturePositionsToTransects(in_trans, out_fc, inPtsDict, IDfield, proj_co
     print('Getting position (lat, lon, x, y, z) of beach armoring for each transect...')
     ArmorLineToTransects(out_fc, inPtsDict['armorLines'], IDfield, proj_code, elevGrid_5m)
     # Dunes
-    PointMetricsToTransects(out_fc, inPtsDict['dhPts'], "dh2trans", 'DH',
-                                 IDfield, tolerance=disttolerance)
-    PointMetricsToTransects(out_fc, inPtsDict['dlPts'], "dl2trans", 'DL',
-                                 IDfield, tolerance=disttolerance)
+    PointMetricsToTransects(out_fc, inPtsDict['dhPts'], "dh2trans", 'DH', IDfield, tolerance=disttolerance)
+    PointMetricsToTransects(out_fc, inPtsDict['dlPts'], "dl2trans", 'DL', IDfield, tolerance=disttolerance)
     # Time report
     endPart1 = time.clock()
     duration = endPart1 - startPart1
@@ -1006,7 +1041,7 @@ def Dist2Inlet(transects, in_line, IDfield='sort_ID', xpts='xpts_temp', two_dire
     # Perform dist2inlet calculations from other direction on shoreline that is bounded by an inlet on both sides.
     """
     if fieldExists(in_line, 'SUM_Join_Count'):
-        try:  # Only use sections that intersect two inlet lines
+        try:  # Only use sections that intersect two (or more) inlet lines
             arcpy.MakeFeatureLayer_management(in_line,in_line+'_lyr','"SUM_Join_Count">1')
             in_line = in_line+'_lyr'
         except:  # Fails if no features have join_count of more than 1
@@ -1046,7 +1081,7 @@ def Dist2Inlet(transects, in_line, IDfield='sort_ID', xpts='xpts_temp', two_dire
     print "Dist2Inlet() completed in %dh:%dm:%fs" % (hours, minutes, seconds)
     return transects
 
-def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', out_clipped_trans='trans_clipped2island_temp'):
+def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'):
     """
     Island width - total land (WidthLand), farthest sides (WidthFull), and segment (WidthPart)
     """
@@ -1057,35 +1092,83 @@ def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', ou
     #arcpy.CreateRoutes_lr(extendedTransects,id_fld,"transroute_temp","LENGTH")
     # find farthest point to sl_x, sl_y => WidthFull and closest point => WidthPart
     # Clip transects with boundary polygon
-    if not arcpy.Exists(out_clipped_trans):
-        arcpy.Clip_analysis(in_trans, barrierBoundary, out_clipped_trans) # ~30 seconds
+    home = arcpy.env.workspace
+    arcpy.env.workspace = temp_gdb
+    out_clipped ='trans_clipped2isl'
+    arcpy.Clip_analysis(os.path.join(home, in_trans), os.path.join(home, barrierBoundary), out_clipped) # ~30 seconds
     # WidthLand
-    ReplaceFields(out_clipped_trans,{'WidthLand':'SHAPE@LENGTH'})
+    ReplaceFields(out_clipped, {'WidthLand':'SHAPE@LENGTH'})
     # WidthFull
     #arcpy.CreateRoutes_lr(extendedTransects,id_fld,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
     # Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
-    arcpy.FeatureVerticesToPoints_management(out_clipped_trans, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
-    arcpy.PointsToLine_management("verts_temp","trans_temp",IDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
-    arcpy.SimplifyLine_cartography("trans_temp", "length_temp","POINT_REMOVE",".01","FLAG_ERRORS","NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
-    ReplaceFields("length_temp",{'WidthFull':'SHAPE@LENGTH'})
+    arcpy.FeatureVerticesToPoints_management(out_clipped, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
+    arcpy.PointsToLine_management("verts_temp", "trans_temp", IDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
+    arcpy.SimplifyLine_cartography("trans_temp", "length_temp", "POINT_REMOVE", ".01", "FLAG_ERRORS", "NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
+    ReplaceFields("length_temp", {'WidthFull':'SHAPE@LENGTH'})
     # Join clipped transects with full barrier lines and transfer width value
-    arcpy.JoinField_management(out_clipped_trans, IDfield, "length_temp", IDfield, "WidthFull")
+    arcpy.JoinField_management(out_clipped, IDfield, "length_temp", IDfield, "WidthFull")
 
     # Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
-    arcpy.MultipartToSinglepart_management(out_clipped_trans,'singlepart_temp')
+    arcpy.MultipartToSinglepart_management(out_clipped,'singlepart_temp')
     ReplaceFields("singlepart_temp", {'WidthPart': 'SHAPE@LENGTH'})
     arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
-    arcpy.JoinField_management(out_clipped_trans, IDfield, "singlepart_temp", IDfield, "WidthPart")
+    arcpy.JoinField_management(out_clipped, IDfield, "singlepart_temp", IDfield, "WidthPart")
     # Add fields to original file
     joinfields = ["WidthFull", "WidthLand", "WidthPart"]
-    arcpy.DeleteField_management(in_trans, joinfields) # in case of reprocessing
-    arcpy.JoinField_management(in_trans, IDfield, out_clipped_trans, IDfield, joinfields)
+    arcpy.DeleteField_management(os.path.join(home, in_trans), joinfields) # in case of reprocessing
+    arcpy.JoinField_management(os.path.join(home, in_trans), IDfield, out_clipped, IDfield, joinfields)
     # Time report
     duration = time.clock() - start
     hours, remainder = divmod(duration, 3600)
     minutes, seconds = divmod(remainder, 60)
     print "Barrier island widths completed in %dh:%dm:%fs" % (hours, minutes, seconds)
-    return out_clipped_trans
+    return out_clipped
+
+def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'):
+    """
+    Island width - total land (WidthLand), farthest sides (WidthFull), and segment (WidthPart)
+    """
+    start = time.clock()
+    home = arcpy.env.workspace
+    arcpy.env.workspace = temp_gdb
+    out_clipped ='trans_clipped2isl'
+    arcpy.Clip_analysis(os.path.join(home, in_trans), os.path.join(home, barrierBoundary), out_clipped) # ~30 seconds
+    # WidthLand
+    ReplaceFields(out_clipped, {'WidthLand':'SHAPE@LENGTH'})
+    # WidthFull
+    #arcpy.CreateRoutes_lr(extendedTransects,id_fld,"transroute_temp","LENGTH",ignore_gaps="NO_IGNORE") # for WidthFull
+    # Create simplified line for full barrier width that ignores interior bays: verts_temp > trans_temp > length_temp
+    arcpy.FeatureVerticesToPoints_management(out_clipped, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
+    # ALTERNATIVE: add start_x, start_y, end_x, end_y to in_trans and then calculate Euclidean distance from array
+    #arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xptsbarrier_temp',output_type='POINT') # ~40 seconds
+    #arcpy.Intersect_analysis([extendedTransects,barrierBoundary],'xlinebarrier_temp',output_type='LINE') # ~30 seconds
+    #arcpy.CreateRoutes_lr(extendedTransects,id_fld,"transroute_temp","LENGTH")
+    # find farthest point to sl_x, sl_y => WidthFull and closest point => WidthPart
+    # Clip transects with boundary polygon
+    arcpy.PointsToLine_management("verts_temp", "trans_temp", IDfield) # creates trans_temp: clipped transects with single vertices # ~1 min
+    arcpy.SimplifyLine_cartography("trans_temp", "length_temp", "POINT_REMOVE", ".01", "FLAG_ERRORS", "NO_KEEP") # creates length_temp: removes extraneous bends while preserving essential shape; adds InLine_FID and SimLnFlag; # ~2 min 20 seconds
+    ReplaceFields("length_temp", {'WidthFull':'SHAPE@LENGTH'})
+    # Join clipped transects with full barrier lines and transfer width value
+    arcpy.JoinField_management(out_clipped, IDfield, "length_temp", IDfield, "WidthFull")
+
+    # Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
+    arcpy.MultipartToSinglepart_management(out_clipped,'singlepart_temp')
+    ReplaceFields("singlepart_temp", {'WidthPart': 'SHAPE@LENGTH'})
+    arcpy.SelectLayerByLocation_management('singlepart_temp', "INTERSECT", shoreline, '10 METERS')
+    arcpy.JoinField_management(out_clipped, IDfield, "singlepart_temp", IDfield, "WidthPart")
+    # Add fields to original file
+    joinfields = ["WidthFull", "WidthLand", "WidthPart"]
+    arcpy.DeleteField_management(os.path.join(home, in_trans), joinfields) # in case of reprocessing
+    arcpy.JoinField_management(os.path.join(home, in_trans), IDfield, out_clipped, IDfield, joinfields)
+    # Time report
+    duration = time.clock() - start
+    hours, remainder = divmod(duration, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    print "Barrier island widths completed in %dh:%dm:%fs" % (hours, minutes, seconds)
+    return out_clipped
+
+
+
 
 def TransectsToContinuousRaster(in_trans, out_rst, cell_size, IDfield='sort_ID'):
     # Create raster of sort_ID - each cell value indicates its nearest transect
@@ -1145,17 +1228,21 @@ def FCtoRaster(in_fc, in_ID, out_rst, IDfield, home, fill=False, cell_size=5):
     print('Raster {} created from {}.'.format(out_rst, in_fc))
     return fill_fc, out_rst
 
-def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, home, clippedtrans='tidytrans_clipped2island'):
+def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'):
     # Split transects into segments
+    #FIXME: After XTools divides dataset, run FC to numpy with explode to points?
+    clippedtrans='tidytrans_clipped2island'
+    input1 = os.path.join(temp_gdb, in_trans+'split1')
+    output = os.path.join(temp_gdb, in_trans+'split2')
     if not arcpy.Exists(clippedtrans):
         arcpy.Clip_analysis(in_trans, barrierBoundary, clippedtrans)
+    home = arcpy.env.workspace
     # Convert transects to 5m points: multi to single; split lines; segments to center points
-    input1 = os.path.join(home,'singlepart_temp')
-    output = os.path.join(home, 'singlepart_split_temp')
     arcpy.MultipartToSinglepart_management(clippedtrans, input1)
     arcpy.ImportToolbox("C:/Program Files (x86)/XTools/XTools Pro/Toolbox/XTools Pro.tbx")
     arcpy.XToolsGP_SplitPolylines_xtp(input1, output,"INTO_SPECIFIED_SEGMENTS","5 Meters","10","#","#","ORIG_OID")
     arcpy.env.workspace = home #reset workspace - XTools changes default workspace for some reason
+    # FCtoDF(output, xy=True) # get segment centroids (not vertices)
     arcpy.FeatureToPoint_management(output, out_pts)
     return out_pts
 
@@ -1240,7 +1327,55 @@ def SummarizePointElevation(transPts, extendedTransects, out_stats, id_fld):
                                id_fld, ['MAX_ptZmhw', 'MEAN_ptZmhw'])
     return(transPts)
 
-def FCtoDF(fc, xy=False, dffields=False, fill=-99999, id_fld=False, extra_fields=[], verbose=True):
+def ShorelineToTrans_PD(extendedTransects, trans_df, inPtsDict, IDfield, proj_code, disttolerance=25, fill=-99999):
+    # shl2trans = 'SHL2trans'
+    # shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
+    shoreline = inPtsDict['shoreline']
+    ShorelinePts = inPtsDict['ShorelinePts']
+    shl2trans = 'SHL2trans_temp'
+    shljoin = 'shljoin_temp'
+    home = arcpy.env.workspace
+    arcpy.Intersect_analysis((shoreline, extendedTransects), shl2trans, output_type='POINT')
+    #FIXME: shljoin = JOIN closest feature in ShorelinePts to shl2trans
+    #fmap = 'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,SHL2trans_temp,sort_ID,-1,-1; ID "ID" true true false 4 Float 0 0 ,First,#,\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\Delmarva\Assateague\2014\Assateague2014.gdb\Assateague2014_SLpts,ID,-1,-1'
+    # arcpy.SpatialJoin_analysis(shl2trans, os.path.join(home, ShorelinePts), 'join_temp','#','#', fmap, "CLOSEST", pt2trans_disttolerance) # create join_temp
+
+def ShoreIntersectToTrans_PD(trans_df, shljoin, IDfield, disttolerance=25, fill=-99999):
+    shljoin_df = FCtoDF(shljoin, xy=True, dffields=[IDfield, 'slope', 'Distance'], fid=True)
+    shljoin_df.rename(index=str, columns={'slope':'Bslope', 'SHAPE@X':'SL_x','SHAPE@Y':'SL_y', 'OID@':'slpts_id'}, inplace=True)
+    for i, row in shljoin_df.iterrows():
+        if row['Distance'] > disttolerance:
+            shljoin_df.ix[i, 'Bslope'] = fill
+    shljoin_df = shljoin_df.drop('Distance', axis=1)
+    shljoin_df.index.name = IDfield
+    trans_df = join_columns(trans_df, shljoin_df, id_fld=IDfield)
+    # JoinDFtoFC(shljoin_df, extendedTransects, IDfield)
+    # return extendedTransects
+    return(trans_df, shljoin_df)
+
+def ArmorLineToTrans_PD(in_trans, trans_df, armorLines, IDfield, proj_code, elevGrid_5m):
+    #FIXME: How do I know which point will be encountered first? - don't want those in back to take the place of
+    arm2trans="arm2trans"
+    armorfields = ['Arm_x','Arm_y','Arm_z']
+    if not arcpy.Exists(armorLines):
+        print('No armoring file found so we will proceed without armoring data. If shorefront tampering is present at this site, cancel the operations to digitize.')
+        arm2trans_df = pd.DataFrame(columns=armorfields, data=fill, index=trans_df.index)
+    else:
+        # Create armor points with XY fields
+        arcpy.Intersect_analysis((armorLines, in_trans), arm2trans, output_type='POINT')
+        print('Getting elevation of beach armoring by extracting elevation values to arm2trans points.')
+        arcpy.sa.ExtractMultiValuesToPoints(arm2trans, [[elevGrid_5m, 'z_tmp']]) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
+        arm2trans_df = FCtoDF(arm2trans, xy=True, dffields=[IDfield, 'z_tmp'])
+        arm2trans_df.rename(index=str, columns={'z_tmp':'Arm_z', 'SHAPE@X':'Arm_x','SHAPE@Y':'Arm_y'}, inplace=True)
+        arm2trans_df.index.name = IDfield
+    # Join
+    trans_df = join_columns(trans_df, arm2trans_df)
+    # JoinDFtoFC(arm2trans_df, in_trans, IDfield)
+    # return(in_trans)
+    return(trans_df)
+
+
+def FCtoDF(fc, xy=False, dffields=[], fill=-99999, id_fld=False, extra_fields=[], verbose=True, fid=False, explode_to_points=False):
     # Convert FeatureClass to pandas.DataFrame with np.nan values
     # 1. Convert FC to Numpy array
     fcfields = [f.name for f in arcpy.ListFields(fc)]
@@ -1249,14 +1384,21 @@ def FCtoDF(fc, xy=False, dffields=False, fill=-99999, id_fld=False, extra_fields
         fcfields += ['SHAPE@X','SHAPE@Y']
     else:
         message = 'Converting feature class to array...'
+    if fid:
+        fcfields += ['OID@']
     if verbose:
         print(message)
-    arr = arcpy.da.FeatureClassToNumPyArray(os.path.join(arcpy.env.workspace, fc), fcfields, null_value=fill)
+    arr = arcpy.da.FeatureClassToNumPyArray(os.path.join(arcpy.env.workspace, fc), fcfields, null_value=fill, explode_to_points=explode_to_points)
     # 2. Convert array to dict
     if verbose:
         print('Converting array to dataframe...')
-    if not dffields:
+    if not len(dffields):
         dffields = list(arr.dtype.names)
+    else:
+        if xy:
+            dffields += ['SHAPE@X','SHAPE@Y']
+        if fid:
+            dffields += ['OID@']
     dict1 = {}
     for f in dffields:
         if np.ndim(arr[f]) < 2:
@@ -1267,7 +1409,7 @@ def FCtoDF(fc, xy=False, dffields=False, fill=-99999, id_fld=False, extra_fields
     else:
         df = pd.DataFrame(dict1, index=arr[id_fld])
         df.index.name = id_fld
-        df.drop(id_fld, axis=1, inplace=True)
+        # df.drop(id_fld, axis=1, inplace=True)
     for col, ser in df.iteritems():
         ser.replace(fill, np.nan, inplace=True)
     if len(extra_fields) > 0:

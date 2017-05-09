@@ -18,10 +18,39 @@ if sys.platform == 'darwin':
 from TE_config import *
 from TE_functions import *
 
+
+#%% Replace SplitTransectsToPoints()
+# WidthFull
+in_trans ='ParkerRiver2014_trans_clip'
+out_clipped ='ParkerRiver2014_clip2island'
+arcpy.Clip_analysis(os.path.join(home, in_trans), os.path.join(home, barrierBoundary), out_clipped) # ~30 seconds
+verts_df = FCtoDF(out_clipped, xy=True, explode_to_points=True)
+verts_df.to_pickle(os.path.join(out_dir, out_clipped+'.pkl'))
+verts_df = pd.read_pickle(os.path.join(out_dir, out_clipped+'.pkl'))
+
+diff = lambda x: x.max() - x.min()
+dx = verts_df.groupby(tID_fld)['SHAPE@X'].agg({'dx': diff})
+dy = verts_df.groupby(tID_fld)['SHAPE@Y'].agg({'dy': diff})
+widthfull = np.hypot(dx, dy)
+
+
+
+verts_df.columns
+verts_df[verts_df['sort_ID']==164]['SHAPE@X']
+verts_df[verts_df['sort_ID']==164]['SHAPE@Y']
+
+# arcpy.FeatureVerticesToPoints_management(out_clipped, "verts_temp", "BOTH_ENDS")  # creates verts_temp=start and end points of each clipped transect # ~20 seconds
+# verts_df = FCtoDF("verts_temp", explode_to_points=True)
+# verts_trans = vert_df.groupby(tID_fld)['SHAPE@X', 'SHAPE@Y']
+
+
+
+
+
 #%% Replace PointMetricsToTransects()
 
 #V1:
-def dunes_to_trans(pts_df, dl_df, tID_fld='sort_ID', xyzflds=['SHAPE@X', 'SHAPE@Y', 'dlow_z'], prefix='DL'):
+ def dunes_to_trans(pts_df, dl_df, tID_fld='sort_ID', xyzflds=['SHAPE@X', 'SHAPE@Y', 'dlow_z'], prefix='DL'):
     #FIXME: outputs all NaN values right now
     # dl_df = FCtoDF(dlPts, xy=True)
     trans_df = pts_df.groupby(tID_fld).first()
@@ -75,21 +104,26 @@ DFtoFC(dh2trans, dh2trans_fc, utmSR, tID_fld, xy=["x", "y"], keep_fields=[dh2tra
 
 #%% Rewrite ShorelinePtsToTransects() to use pandas
 
-def ShorelinePtsToTransects(extendedTransects, inPtsDict, IDfield, proj_code, pt2trans_disttolerance):
+def ShorelineToTrans_PD(extendedTransects, trans_df, inPtsDict, IDfield, proj_code, disttolerance=25, fill=-99999):
     # shl2trans = 'SHL2trans'
     # shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
     shoreline = inPtsDict['shoreline']
     ShorelinePts = inPtsDict['ShorelinePts']
-    arcpy.Intersect_analysis((shoreline, extendedTransects), 'SHL2trans_temp', output_type='POINT')
-    shl2trans, shlfields = AddXYAttributes('SHL2trans_temp', 'SHL2trans', 'SL', proj_code)
-    shlfields.append('Bslope')
-    # Add lat lon and x y fields to create SHL2trans
-    # Add slope from ShorelinePts to shoreline intersection with transects (which replace the XY values from the original shoreline points)
-    ReplaceFields(inPtsDict['ShorelinePts'],{'ID':'OID@'},'SINGLE')
-    arcpy.SpatialJoin_analysis(shl2trans,inPtsDict['ShorelinePts'], 'join_temp','#','#','#',"CLOSEST",pt2trans_disttolerance) # create join_temp
-    arcpy.JoinField_management(shl2trans,IDfield,'join_temp',IDfield,'slope') # join slope from join_temp (from ShorelinePts) with SHL2trans points
-    arcpy.DeleteField_management(shl2trans,'Bslope') #In case of reprocessing
-    arcpy.AlterField_management(shl2trans,'slope','Bslope','Bslope')
-    arcpy.DeleteField_management(extendedTransects, shlfields) #In case of reprocessing
-    arcpy.JoinField_management(extendedTransects, IDfield, shl2trans, IDfield, shlfields)
-    return extendedTransects
+    shl2trans = 'SHL2trans_temp'
+    shljoin = 'shljoin_temp'
+    home = arcpy.env.workspace
+    arcpy.Intersect_analysis((shoreline, extendedTransects), shl2trans, output_type='POINT')
+    #FIXME: shljoin = JOIN closest feature in ShorelinePts to shl2trans
+    #fmap = 'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,SHL2trans_temp,sort_ID,-1,-1; ID "ID" true true false 4 Float 0 0 ,First,#,\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\Delmarva\Assateague\2014\Assateague2014.gdb\Assateague2014_SLpts,ID,-1,-1'
+    # arcpy.SpatialJoin_analysis(shl2trans, os.path.join(home, ShorelinePts), 'join_temp','#','#', fmap, "CLOSEST", pt2trans_disttolerance) # create join_temp
+    shljoin_df = FCtoDF(shljoin, xy=True, dffields=[IDfield, 'slope', 'Distance'], fid=True)
+    shljoin_df.rename(index=str, columns={'slope':'Bslope', 'SHAPE@X':'SL_x','SHAPE@Y':'SL_y', 'OID@':'slpts_id'}, inplace=True)
+    for i, row in shljoin_df.iterrows():
+        if row['Distance'] > disttolerance:
+            shljoin_df.ix[i, 'Bslope'] = fill
+    shljoin_df.drop('Distance', axis=1)
+    shljoin_df.index.name = id_fld
+    trans_df = join_columns(trans_df, shljoin_df)
+    # JoinDFtoFC(shljoin_df, extendedTransects, IDfield)
+    # return extendedTransects
+    return shljoin_df

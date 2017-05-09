@@ -70,11 +70,14 @@ if not i_name:
 else:
     inletLines = i_name
 
+#%% ELEVATION
+if not arcpy.Exists(elevGrid_5m):
+    ProcessDEM(elevGrid, elevGrid_5m, utmSR)
+
 #%% BOUNDARY POLYGON
 if not bb_name:
     # Inlet lines must intersect MHW
-    bndpoly = DEMtoFullShorelinePoly(elevGrid_5m,
-        '{site}{year}'.format(**SiteYear_strings), MTL, MHW, inletLines, ShorelinePts)
+    bndpoly = DEMtoFullShorelinePoly(elevGrid_5m, '{site}{year}'.format(**SiteYear_strings), MTL, MHW, inletLines, ShorelinePts)
     # Eliminate any remnant polygons on oceanside
     if pythonaddins.MessageBox('Ready to delete selected features from {}?'.format(bndpoly), '', 4) == 'Yes':
         arcpy.DeleteFeatures_management(bndpoly)
@@ -82,21 +85,18 @@ if not bb_name:
         print("Ok, redo.")
         exit()
 
-    barrierBoundary = NewBNDpoly(bndpoly, ShorelinePts, barrierBoundary,
-                                 '25 METERS', '50 METERS')
+    barrierBoundary = NewBNDpoly(bndpoly, ShorelinePts, barrierBoundary, '25 METERS', '50 METERS')
 else:
     barrierBoundary = bb_name
 
+if not arcpy.Exists(barrierBoundary):
+    barrierBoundary = NewBNDpoly(bndpoly, ShorelinePts, barrierBoundary, '25 METERS', '50 METERS')
+
 #%% SHORELINE
 if not new_shore:
-    shoreline = CreateShoreBetweenInlets(barrierBoundary, inletLines,
-                                         shoreline, ShorelinePts, proj_code)
+    shoreline = CreateShoreBetweenInlets(barrierBoundary, inletLines, shoreline, ShorelinePts, proj_code)
 else:
     shoreline = new_shore
-
-#%% ELEVATION
-if not arcpy.Exists(elevGrid_5m):
-    ProcessDEM(elevGrid, elevGrid_5m, utmSR)
 
 #%% TRANSECTS - extendedTrans
 # Copy transects from archive directory
@@ -120,8 +120,10 @@ trans_sort_1 = 'trans_sort_temp'
 extTrans_sort_ext = 'extTrans_temp'
 t_trans = True
 
+orig_trans = orig_trans+'_nad83'
+
 arcpy.env.workspace = os.path.dirname(rst_transIDpath)
-arcpy.env.workspace = trans_dir
+# arcpy.env.workspace = trans_dir
 # Extend
 ExtendLine(fc=orig_trans, new_fc=LTextended, distance=extendlength, proj_code=proj_code)
 # 1. Copy only the geometry of transects to use as material for filling gaps
@@ -129,23 +131,21 @@ CopyAndWipeFC(LTextended, trans_presort, ['sort_ID'])
 print("MANUALLY: use groups of existing transects in new FC '{}' to fill gaps. Avoid overlapping transects as much as possible".format(trans_presort))
 exit()
 
-trans_sort_1, count1 = PrepTransects_part2(trans_presort, LTextended, barrierBoundary, trans_sort_1='trans_sort_temp', sort_corner="LR")
 
+
+trans_sort_1, count1 = PrepTransects_part2(trans_presort, LTextended, barrierBoundary, trans_sort_1=trans_sort_1, sort_corner="LR")
+if not multi_sort:
+    SortTransectsFromSortLines(trans_presort, extendedTrans, sort_lines=[], sortfield=tID_fld, sort_corner='LL')
 # Create lines to use to sort new transects
 if multi_sort:
     sort_lines = 'sort_lines'
     arcpy.CreateFeatureclass_management(trans_dir, sort_lines, "POLYLINE", spatial_reference=arcpy.SpatialReference(proj_code))
     print("MANUALLY: Add features to sort_lines.")
     exit()
-if multi_sort:
-    #FIXME: no sort_line_list
-    sort_line_list = ['sort_line1','sort_line2']
-    SortTransectsFromSortLines(trans_presort, trans_sort_1, sort_line_list, sortfield='sort_ID',sort_corner='LL')
+    SortTransectsFromSortLines(trans_presort, extendedTrans, sort_lines, sortfield=tID_fld)
 
-if len(arcpy.ListFields(trans_sort_1, 'OBJECTID*')) == 2:
-    ReplaceFields(trans_sort_1, {'OBJECTID': 'OID@'})
-
-SetStartValue(trans_sort_1, extendedTrans, tID_fld, start=1)
+if len(arcpy.ListFields(extendedTrans, 'OBJECTID*')) == 2:
+    ReplaceFields(extendedTrans, {'OBJECTID': 'OID@'})
 
 # TRANSECTS - extTrans_tidy
 if not t_trans:
@@ -156,18 +156,19 @@ if not t_trans:
 if not t_trans:
     # Copy only the selected lines
     overlapTrans_lines = 'overlapTrans_lines_temp'
-    arcpy.CopyFeatures_management(extendedTransects, overlapTrans_lines)
-    arcpy.SelectLayerByAttribute_management(extendedTransects, "CLEAR_SELECTION")
+    arcpy.CopyFeatures_management(orig_extTrans, overlapTrans_lines)
+    arcpy.SelectLayerByAttribute_management(orig_extTrans, "CLEAR_SELECTION")
     # Split transects at the lines of overlap.
     trans_x = 'overlap_points_temp'
-    arcpy.Intersect_analysis([extendedTransects, overlapTrans_lines], trans_x,
+    arcpy.Intersect_analysis([orig_extTrans, overlapTrans_lines], trans_x,
                              'ALL', output_type="POINT")
-    arcpy.SplitLineAtPoint_management(extendedTransects, trans_x, extTrans_tidy)
+    arcpy.SplitLineAtPoint_management(orig_extTrans, trans_x, orig_tidytrans)
     print("MANUALLY: Select transect segments to be deleted. ")
     exit()
 if not t_trans:
-    arcpy.DeleteFeatures_management(extTrans_tidy)
-    arcpy.CopyFeatures_management(extTrans_tidy, extTrans_tidy_archive)
+    arcpy.DeleteFeatures_management(orig_tidytrans)
+    # arcpy.CopyFeatures_management(orig_tidytrans, extTrans_tidy_archive)
+    extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 
 #%% Create ID raster
 arcpy.env.workspace = os.path.dirname(rst_transIDpath)

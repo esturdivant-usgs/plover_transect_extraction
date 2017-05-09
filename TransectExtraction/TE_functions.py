@@ -35,12 +35,15 @@ def list_groupcolumns(df, group_id):
     # changed = ne_stacked[ne_stacked]
 
 def join_columns(df1, df2, id_fld='ID', how='outer'):
+    # id_fld
     if id_fld in df2.columns:
-        df1 = (df1.drop(df1.axes[1].intersection(df2.axes[1]), axis=1)
-                  .join(df2,  on=id_fld, how=how))
+        df2.index = df2[id_fld] # set id_fld to index of join dataframe
+        df2 = df2.drop(id_fld, axis=1) # remove id_fld from join dataframe
+        df1 = df1.drop(df1.axes[1].intersection(df2.axes[1]), axis=1) # remove matching columns from target dataframe
+        df1 = df1.join(df2, on=id_fld, how=how) # join df2 to df1
     else:
-        df1 = (df1.drop(df1.axes[1].intersection(df2.axes[1]), axis=1)
-                  .join(df2, how=how))
+        df1 = df1.drop(df1.axes[1].intersection(df2.axes[1]), axis=1)
+        df1 = df1.join(df2, how=how)
     return(df1)
 
 def adjust2mhw(df, MHW, fldlist=['DH_z', 'DL_z', 'Arm_z']):
@@ -56,6 +59,7 @@ def sort_pts(df, tID_fld, pID_fld='SplitSort'):
         df.drop(['seg_x', 'seg_y'], axis=1, inplace=True, errors='ignore')
         df.rename(index=str, columns={'SHAPE@X':'seg_x', 'SHAPE@Y':'seg_y'}, inplace=True)
     # 2. calculate pt distance to MHW
+    df.reset_index(drop=True, inplace=True)
     dist_seg = np.hypot(df.seg_x - df.SL_x, df.seg_y - df.SL_y)
     df = join_columns(df, pd.DataFrame({'Dist_Seg': dist_seg}, index=df.index))
     # 3. Sort and create pID_fld (SplitSort)

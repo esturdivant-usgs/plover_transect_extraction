@@ -7,24 +7,21 @@ Date last modified: 3/28/2017
 import os
 import sys
 if sys.platform == 'win32':
+    script_path = r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction"
+    sys.path.append(script_path) # path to TransectExtraction module
     import arcpy
+if sys.platform == 'darwin':
+    script_path = '/Users/esturdivant/GitHub/plover_transect_extraction/TransectExtraction'
+    sys.path.append(script_path)
+from TE_siteyear_configmap import *
 
 ############ Inputs #########################
-SiteYear_strings = {'site': 'Cedar',
-                    'year': '2012',
-                    'code': 'cei12',
-                    'region': 'Delmarva',
-                    'MHW':0.34,
-                    'MLW':-0.56,
-                    'MTL':None}
+site = 'Assateague'
+site = 'ParkerRiver'
+# site = 'Cedar'
+year = '2014'
 
-# SiteYear_strings = {'site': 'Smith',
-#                     'year': '2012',
-#                     'code': 'smi12',
-#                     'region': 'Delmarva',
-#                     'MHW':0.34,
-#                     'MLW':-0.56,
-#                     'MTL':None}
+SiteYear_strings = siteyear[site+year]
 
 overwrite_Z = False
 
@@ -34,7 +31,7 @@ pID_fld = "SplitSort"
 extendlength = 3000                      # extended transects distance (m) IF NEEDED
 fill = -99999	  					# Replace Nulls with
 cell_size = 5
-pt2trans_disttolerance = "25 METERS"        # Maximum distance that point can be from transect and still be joined; originally 10 m
+pt2trans_disttolerance = 25        # Maximum distance that point can be from transect and still be joined; originally 10 m
 if SiteYear_strings['site'] == 'Monomoy':
     maxDH = 3
 else:
@@ -54,6 +51,7 @@ site_dir = os.path.join(volume, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
 out_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extracted_Data')
 code_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extraction_code')
 working_dir = os.path.join(site_dir, SiteYear_strings['year'], 'working')
+temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'
 trans_dir = os.path.join(site_dir, 'All_Years', SiteYear_strings['site']+'_transects.gdb')
 home_gdb = '{site}{year}.gdb'.format(**SiteYear_strings)
 home = os.path.join(site_dir, SiteYear_strings['year'], home_gdb)
@@ -115,7 +113,6 @@ transPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 transPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = 'transPts_ZmhwSlp'
 out_stats = os.path.join(home,"avgZ_byTransect")
-extTrans_tidy_archive = os.path.join(trans_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
 beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 transPts_presort = 'transPts_presort'
@@ -177,17 +174,17 @@ calculated = ['DL_zMHW', 'DH_zMHW', 'Arm_zMHW',
     'bh_mhw','bw_mhw', 'bh_mlw','bw_mlw',
     'CP_x','CP_y','CP_zMHW']
 """
-# trans_flds_arc = ['SL_Lat', 'SL_Lon', 'SL_easting', 'SL_northing', 'Bslope',
-#     'DL_Lat', 'DL_Lon', 'DL_easting', 'DL_northing', 'DL_z', 'DL_zMHW',
-#     'DH_Lat', 'DH_Lon', 'DH_easting', 'DH_northing', 'DH_z', 'DH_zMHW',
-#     'Arm_Lat', 'Arm_Lon', 'Arm_easting', 'Arm_northing', 'Arm_z', 'Arm_zMHW',
-#     'DistDH', 'DistDL', 'DistArm',
-#     'Dist2Inlet', 'WidthPart', 'WidthLand', 'WidthFull']
-# pt_flds_arc = ['ptZ', 'ptSlp']
-#
-# old2newflds = {'SL_easting': 'SL_x', 'SL_northing': 'SL_y',
-#               'DL_easting': 'DL_x', 'DL_northing': 'DL_y',
-#               'DH_easting': 'DH_x', 'DH_northing': 'DH_y',
-#               'Arm_easting': 'Arm_x', 'Arm_northing': 'Arm_y',
-#               'beach_h_MLW': 'bh_mlw', 'beachWidth_MLW': 'bw_mlw',
-#               'PointZ':'ptZ', 'PointZ_mhw':'ptZmhw', 'PointSlp':'ptSlp'}
+trans_flds_arc = ['SL_Lat', 'SL_Lon', 'SL_easting', 'SL_northing', 'Bslope',
+    'DL_Lat', 'DL_Lon', 'DL_easting', 'DL_northing', 'DL_z', 'DL_zMHW',
+    'DH_Lat', 'DH_Lon', 'DH_easting', 'DH_northing', 'DH_z', 'DH_zMHW',
+    'Arm_Lat', 'Arm_Lon', 'Arm_easting', 'Arm_northing', 'Arm_z', 'Arm_zMHW',
+    'DistDH', 'DistDL', 'DistArm',
+    'Dist2Inlet', 'WidthPart', 'WidthLand', 'WidthFull']
+pt_flds_arc = ['ptZ', 'ptSlp']
+
+old2newflds = {'SL_easting': 'SL_x', 'SL_northing': 'SL_y',
+              'DL_easting': 'DL_x', 'DL_northing': 'DL_y',
+              'DH_easting': 'DH_x', 'DH_northing': 'DH_y',
+              'Arm_easting': 'Arm_x', 'Arm_northing': 'Arm_y',
+              'beach_h_MLW': 'bh_mlw', 'beachWidth_MLW': 'bw_mlw',
+              'PointZ':'ptZ', 'PointZ_mhw':'ptZmhw', 'PointSlp':'ptSlp'}
