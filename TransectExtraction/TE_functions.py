@@ -191,11 +191,15 @@ def calc_beach_width(pts_df, maxDH=2.5, tID_fld='sort_ID'):
         Xtran = pts_df[pts_df[tID_fld] == tID]['seg_x']
         ipt = np.hypot(Xtran - iDL['x'], Ytran - iDL['y']).idxmin()
         ptDL = iDL
-        ptDL['x'] = Xtran[ipt]
-        ptDL['y'] = Ytran[ipt]
-        # ptDL = iDL if np.isnan(ipt) else {'x':Xtran[ipt], 'y':Ytran[ipt], 'z':iDL['z']}
+        try:
+            ptDL['x'] = Xtran.ix[ipt] #FIXME: cannot do label indexing on <class 'pandas.indexes.numeric.Int64Index'> with these indexers [nan] of <type 'float'>'
+            ptDL['y'] = Ytran.ix[ipt]
+            # ptDL = iDL if np.isnan(ipt) else {'x':Xtran[ipt], 'y':Ytran[ipt], 'z':iDL['z']}
+        except TypeError:
+            ptDL['x'] = np.nan
+            ptDL['y'] = np.nan
         if np.isnan(ipt):
-            print('Despite that DL equiv was found, ipt is nan.')
+            print('Transect {}: Despite that DL equiv was found, ipt is nan.'.format(tID))
         if np.isnan(ptDL['x']):
             print('ptDL["x"] is NaN')
             if not np.isnan(tran.Arm_x): # elseif isnan(Ae) == 0 & isnan(DLe) == 1,

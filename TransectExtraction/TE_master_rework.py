@@ -128,8 +128,10 @@ pts_df = join_columns(pts_df, trans_df, tID_fld) # Join transect values to pts
 #%% Save dataframes to open elsewhere or later
 trans_df.to_pickle(os.path.join(out_dir, extTrans_null+'.pkl'))
 pts_df.to_pickle(os.path.join(out_dir, transPts_null+'.pkl'))
-# pts_df = pd.read_pickle(os.path.join(out_dir,transPts_null+'.pkl'))
-# trans_df = pd.read_pickle(os.path.join(out_dir, extTrans_null+'.pkl'))
+if sys.platform == 'darwin':
+    pts_df = pd.read_pickle(os.path.join(out_dir,transPts_null+'.pkl'))
+    trans_df = pd.read_pickle(os.path.join(out_dir, extTrans_null+'.pkl'))
+
 #%%
 """
 Outputs

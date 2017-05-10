@@ -1079,7 +1079,7 @@ def Dist2Inlet(transects, in_line, IDfield='sort_ID', xpts='xpts_temp', two_dire
     hours, remainder = divmod(duration, 3600)
     minutes, seconds = divmod(remainder, 60)
     print "Dist2Inlet() completed in %dh:%dm:%fs" % (hours, minutes, seconds)
-    return transects
+    return(transects)
 
 def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'):
     """
@@ -1150,7 +1150,7 @@ def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', te
     ReplaceFields("length_temp", {'WidthFull':'SHAPE@LENGTH'})
     # Join clipped transects with full barrier lines and transfer width value
     arcpy.JoinField_management(out_clipped, IDfield, "length_temp", IDfield, "WidthFull")
-
+    # WidthPart
     # Calc WidthPart as length of the part of the clipped transect that intersects MHW_oceanside
     arcpy.MultipartToSinglepart_management(out_clipped,'singlepart_temp')
     ReplaceFields("singlepart_temp", {'WidthPart': 'SHAPE@LENGTH'})
@@ -1167,7 +1167,14 @@ def GetBarrierWidths(in_trans, barrierBoundary, shoreline, IDfield='sort_ID', te
     print "Barrier island widths completed in %dh:%dm:%fs" % (hours, minutes, seconds)
     return out_clipped
 
-
+def calc_WidthFull(out_clipped, tID_fld):
+    # WidthFull
+    verts_df = FCtoDF(out_clipped, xy=True, explode_to_points=True)
+    diff = lambda x: x.max() - x.min()
+    dx = verts_df.groupby(tID_fld)['SHAPE@X'].agg({'dx': diff})
+    dy = verts_df.groupby(tID_fld)['SHAPE@Y'].agg({'dy': diff})
+    widthfull = np.hypot(dx, dy)
+    return(widthfull)
 
 
 def TransectsToContinuousRaster(in_trans, out_rst, cell_size, IDfield='sort_ID'):
@@ -1375,7 +1382,7 @@ def ArmorLineToTrans_PD(in_trans, trans_df, armorLines, IDfield, proj_code, elev
     return(trans_df)
 
 
-def FCtoDF(fc, xy=False, dffields=[], fill=-99999, id_fld=False, extra_fields=[], verbose=True, fid=False, explode_to_points=False):
+def FCtoDF(fc, xy=False, dffields=[], fill=-99999, id_fld=False, extra_fields=[], verbose=True, fid=False, explode_to_points=False, length=False):
     # Convert FeatureClass to pandas.DataFrame with np.nan values
     # 1. Convert FC to Numpy array
     fcfields = [f.name for f in arcpy.ListFields(fc)]
@@ -1386,6 +1393,8 @@ def FCtoDF(fc, xy=False, dffields=[], fill=-99999, id_fld=False, extra_fields=[]
         message = 'Converting feature class to array...'
     if fid:
         fcfields += ['OID@']
+    if length:
+        fcfields += ['SHAPE@LENGTH']
     if verbose:
         print(message)
     arr = arcpy.da.FeatureClassToNumPyArray(os.path.join(arcpy.env.workspace, fc), fcfields, null_value=fill, explode_to_points=explode_to_points)
@@ -1399,6 +1408,8 @@ def FCtoDF(fc, xy=False, dffields=[], fill=-99999, id_fld=False, extra_fields=[]
             dffields += ['SHAPE@X','SHAPE@Y']
         if fid:
             dffields += ['OID@']
+        if length:
+            dffields += ['SHAPE@LENGTH']
     dict1 = {}
     for f in dffields:
         if np.ndim(arr[f]) < 2:
