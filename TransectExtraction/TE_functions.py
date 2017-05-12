@@ -8,6 +8,12 @@ import pandas as pd
 import numpy as np
 from operator import add
 
+def print_duration(start):
+    duration = time.clock() - start
+    hours, remainder = divmod(duration, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    print('TransectsToPointsDF() completed in {:.0f} hrs:{:.0f} mins:{} seconds'.format(hours, minutes, seconds))
+    return(duration)
 
 def newcoord(coords, dist):
     # From: gis.stackexchange.com/questions/71645/extending-line-by-specified-distance-in-arcgis-for-desktop
@@ -52,7 +58,7 @@ def adjust2mhw(df, MHW, fldlist=['DH_z', 'DL_z', 'Arm_z']):
                 .join(df[fld].subtract(MHW), rsuffix='mhw'))
     return(df)
 
-def sort_pts(df, tID_fld, pID_fld='SplitSort'):
+def sort_pts(df, tID_fld='sort_ID', pID_fld='SplitSort'):
     # Calculate pt distance from shore; use that to sort pts and create pID_fld
     # 1. set X and Y fields
     if 'SHAPE@X' in df.columns:
@@ -68,7 +74,7 @@ def sort_pts(df, tID_fld, pID_fld='SplitSort'):
     df.reset_index(drop=False, inplace=True)
     return(df)
 
-def calc_trans_distances(df):
+def calc_trans_distances(df, MHW=''):
     sl2dh = np.hypot(df.SL_x - df.DH_x, df.SL_y - df.DH_y)
     sl2dl = np.hypot(df.SL_x - df.DL_x, df.SL_y - df.DL_y)
     sl2arm = np.hypot(df.SL_x - df.Arm_x, df.SL_y - df.Arm_y)
@@ -76,6 +82,8 @@ def calc_trans_distances(df):
                                         'DistDL': sl2dl,
                                         'DistArm': sl2arm
                                         }, index=df.index))
+    if len(MHW):
+        df = adjust2mhw(df, MHW)
     return(df)
 
 def calc_pt_distances(df):
@@ -102,66 +110,6 @@ def prep_points(df, tID_fld, pID_fld, MHW, old2newflds={}):
     df = calc_trans_distances(df)
     return(df)
 
-def prep_points_v1(df, tID_fld, pID_fld, old2newflds={}):
-    # Preprocess transect points (after running FCtoDF(transPts, xy=True))
-    # 0. Rename columns
-    if len(old2newflds):
-        df.rename(index=str, columns=old2newflds, inplace=True)
-    # 1. set X and Y fields
-    if 'SHAPE@X' in df.columns:
-        df.drop(['seg_x', 'seg_y'], axis=1, inplace=True, errors='ignore')
-        df.rename(index=str, columns={'SHAPE@X':'seg_x', 'SHAPE@Y':'seg_y'}, inplace=True)
-    # 2. calculate distances
-    dist_seg = np.hypot(df.seg_x - df.SL_x, df.seg_y - df.SL_y)
-    dist_dh = np.hypot(df.seg_x - df.DH_x, df.seg_y - df.DH_y)
-    dist_dl = np.hypot(df.seg_x - df.DL_x, df.seg_y - df.DL_y)
-    dist_arm = np.hypot(df.seg_x - df.Arm_x, df.seg_y - df.Arm_y)
-    df = join_columns(df, pd.DataFrame({'Dist_Seg': dist_seg,
-                                        'DistSegDH': dist_dh,
-                                        'DistSegDL': dist_dl,
-                                        'DistSegArm': dist_arm,
-                                        'Dist_MHWbay': df.WidthPart - dist_seg
-                                        # 'DistSegDH': dist_seg - df.DistDH,
-                                        # 'DistSegDL': dist_seg - df.DistDL,
-                                        # 'DistSegArm': dist_seg - df.DistArm
-                                        }, index=df.index))
-    # 3. Sort and create pID_fld (SplitSort)
-    df = df.sort_values(by=[tID_fld, 'Dist_Seg']).reset_index(drop=True)
-    df.index.rename(pID_fld, inplace=True)
-    df.reset_index(drop=False, inplace=True)
-    return(df)
-
-def dunes_to_trans(pts_df, dl_df, tID_fld='sort_ID', xyzflds=['SHAPE@X', 'SHAPE@Y', 'dlow_z'], prefix='DL'):
-    #FIXME: Could probably be much more efficient
-    #FIXME: outputs all NaN values right now
-    # dl_df = FCtoDF(dlPts, xy=True)
-    trans_df = pts_df.groupby(tID_fld).first()
-    dlpts = pd.DataFrame(np.nan, index=trans_df.index, columns=dl_df.columns)
-    # loop through transects
-    for tID, tran in trans_df.iterrows(): # tran = trans_df.iloc[tID]
-        # tID = 100
-        # tran = trans_df.iloc[tID]
-        Ytran = pts_df[pts_df[tID_fld] == tID]['seg_y']
-        Xtran = pts_df[pts_df[tID_fld] == tID]['seg_x']
-        # get distance between transect and every dlow point
-        dltmp = pd.Series(np.nan, index=dl_df.index)
-        for di, row in dl_df.iterrows():
-            mindist = np.hypot(Xtran - row[xyzflds[0]], Ytran - row[xyzflds[1]]).min()
-            dltmp[di] = mindist if mindist < 25 else np.nan
-        # get index of minimum distance
-        try:
-            dlpts.ix[tID] = dl_df.iloc[dltmp.idxmin()]
-        except:
-            print('NaN?: {}, {}'.format(tID, dltmp.idxmin()))
-            pass
-    xyz = pd.concat([pd.Series(dlpts[xyzflds[0]], name=prefix+'_x'),
-                     pd.Series(dlpts[xyzflds[1]], name=prefix+'_y'),
-                     pd.Series(dlpts[xyzflds[2]], name=prefix+'_z')], axis=1)
-    pts_df = (pts_df.drop(pts_df.axes[1].intersection(xyz.axes[1]), axis=1)
-                    .join(xyz, on=tID_fld, how='outer'))
-    # dlpts.rename(index=str, columns={xyzflds[0]:prefix+'_x', xyzflds[1]:prefix+'_y'}, inplace=True)
-    return(pts_df, dlpts)
-    # DFtoFC(dlpts, dl2trans_fc, spatial_ref, tID_fld, xy=["x", "y"], keep_fields=['z'])
 
 def calc_beach_width(pts_df, maxDH=2.5, tID_fld='sort_ID'):
     # Calculate beach width and height from MHW (uBW, uBH) from dataframe of transPts
@@ -192,7 +140,7 @@ def calc_beach_width(pts_df, maxDH=2.5, tID_fld='sort_ID'):
         ipt = np.hypot(Xtran - iDL['x'], Ytran - iDL['y']).idxmin()
         ptDL = iDL
         try:
-            ptDL['x'] = Xtran.ix[ipt] #FIXME: cannot do label indexing on <class 'pandas.indexes.numeric.Int64Index'> with these indexers [nan] of <type 'float'>'
+            ptDL['x'] = Xtran.ix[ipt]
             ptDL['y'] = Ytran.ix[ipt]
             # ptDL = iDL if np.isnan(ipt) else {'x':Xtran[ipt], 'y':Ytran[ipt], 'z':iDL['z']}
         except TypeError:

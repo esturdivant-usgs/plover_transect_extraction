@@ -178,6 +178,14 @@ if not arcpy.Exists(os.path.basename(rst_transIDpath)):
     outEucAll.save(os.path.basename(rst_transIDpath))
 arcpy.env.workspace = home
 
+#%% Shoreline-transect intersect points
+arcpy.Intersect_analysis((shoreline, extendedTrans), intersect_shl2trans, output_type='POINT')
+shl2trans = 'ParkerRiver2014_SLpts2trans'
+#FIXME: shljoin = JOIN closest feature in ShorelinePts to shl2trans
+# right click on intersect layer, and
+#fmap = 'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,SHL2trans_temp,sort_ID,-1,-1; ID "ID" true true false 4 Float 0 0 ,First,#,\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\Delmarva\Assateague\2014\Assateague2014.gdb\Assateague2014_SLpts,ID,-1,-1'
+# arcpy.SpatialJoin_analysis(shl2trans, os.path.join(home, ShorelinePts), 'join_temp','#','#', fmap, "CLOSEST", pt2trans_disttolerance) # create join_temp
+
 """
 ~~ end transect work
 """

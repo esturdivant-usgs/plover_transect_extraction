@@ -94,6 +94,7 @@ dl2trans = '{site}{year}_DL2trans'.format(**SiteYear_strings)						# DLow within
 arm2trans = '{site}{year}_arm2trans'.format(**SiteYear_strings)
 oceanside_auto = '{site}{year}_MHWfromSLPs'.format(**SiteYear_strings)
 shl2trans = '{site}{year}_SHL2trans'.format(**SiteYear_strings)							# beach slope from lidar within 10m of transect
+intersect_shl2trans = '{site}{year}_SHL2trans_intersect'.format(**SiteYear_strings)							# beach slope from lidar within 10m of transect
 MLWpts = '{site}{year}_MLW2trans'.format(**SiteYear_strings)                     # MLW points calculated during Beach Width calculation
 CPpts = '{site}{year}_topBeachEdgePts'.format(**SiteYear_strings)                     # Points used as upper beach edge for Beach Width and height
 shoreline = '{site}{year}_ShoreBetweenInlets'.format(**SiteYear_strings)        # Complete shoreline ready to become route in Pt. 2
@@ -101,9 +102,9 @@ slopeGrid = '{site}{year}_slope_5m'.format(**SiteYear_strings)
 
 extendedTransects = '{site}{year}_extTrans_working'.format(**SiteYear_strings)
 extTrans_tidy = "{site}{year}_tidyTrans".format(**SiteYear_strings)
+tidy_clipped = "{site}{year}_tidyTrans_clipped".format(**SiteYear_strings)
 extTrans_fill = '{site}{year}_extTrans_fill'.format(**SiteYear_strings)
 extTrans_null = '{site}{year}_extTrans_null'.format(**SiteYear_strings)
-transects_part2 = os.path.join(home,'trans_part2')
 transects_final = '{site}{year}_trans_populated'.format(**SiteYear_strings)
 transPts = '{site}{year}_transPts_working'.format(**SiteYear_strings) 	# Outputs Transect Segment points
 transPts = '{site}{year}_trans_5mPts'.format(**SiteYear_strings)
@@ -141,7 +142,7 @@ rst_bwgrid_path = os.path.join(out_dir, "{code}_ubw".format(**SiteYear_strings))
 #     'SplitSort', 'ptZ', 'ptSlp', 'ptZmhw',
 #     'MAX_ptZmhw', 'MEAN_ptZmhw']
 
-trans_flds0 = ['sort_ID','TRANSORDER', 'TRANSECTD', 'LRR', 'LR2', 'LSE', 'LCI90']
+trans_flds0 = ['sort_ID','TRANSORDER', 'TRANSECTID', 'LRR', 'LR2', 'LSE', 'LCI90']
 trans_flds_arc = ['SL_Lat', 'SL_Lon', 'SL_x', 'SL_y', 'Bslope',
     'DL_Lat', 'DL_Lon', 'DL_x', 'DL_y', 'DL_z', 'DL_zMHW',
     'DH_Lat', 'DH_Lon', 'DH_x', 'DH_y', 'DH_z', 'DH_zMHW',
