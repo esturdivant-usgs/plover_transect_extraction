@@ -6,7 +6,8 @@ email: esturdivant@usgs.gov; bgutierrez@usgs.gov; sawyer.stippa@gmail.com
 Date last modified: 11/22/2016
 '''
 import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+#sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
 
 # arcpy.GetParameterAsText(0)
@@ -17,14 +18,14 @@ arcpy.CheckOutExtension("Spatial") 											# Checkout Spatial Analysis extens
 # df = arcpy.mapping.ListDataFrames(mxd)[0]
 #arcpy.AddToolbox("C:/ArcGIS/XToolsPro/Toolbox/XTools Pro.tbx") 				# Add XTools Pro toolbox
 #arcpy.env.workspace=home= r'D:\ben_usgs\stippaData\FireIsland2012\FireIsland2012.gdb'
-############ Inputs #########################
-SiteYear_strings = {'site': 'Forsythe',
-                    'year': '2014',
-                    'region': 'NewJersey',
-                    'MHW':0.43,
-                    'MLW':-0.61,
-                    'MTL':None}
 
+############ Inputs #########################
+SiteYear_strings = {'site': 'ParkerRiver',
+                    'year': '2014',
+                    'region': 'Massachusetts',
+                    'MHW':1.22,
+                    'MLW':-1.37, # average of approximate MLW on Chesapeake Bay side (-0.47) and Atlantic side (-0.58)
+                    'MTL':None}
 
 CreateMHWline = False
 rawtransects = False
@@ -83,7 +84,7 @@ tranSplitPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 tranSplitPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = os.path.join(home,'transPts_ZmhwSlp')
 extTrans_tidy_archive = os.path.join(archive_dir, '{site}_tidyTrans'.format(**SiteYear_strings))
-beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
+beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings))
 
 ########### Default Values ##########################
 transUIDfield = "sort_ID"

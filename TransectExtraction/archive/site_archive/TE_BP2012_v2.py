@@ -15,6 +15,7 @@ Notes:
 
 import arcpy, time, os, pythonaddins, sys, math
 sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
+sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
 
 start = time.clock()
@@ -27,9 +28,9 @@ arcpy.CheckOutExtension("Spatial") 											# Checkout Spatial Analysis extens
 #arcpy.env.workspace=home= r'D:\ben_usgs\stippaData\FireIsland2012\FireIsland2012.gdb'
 ############ Inputs #########################
 
-arcpy.env.workspace=home= r"\\Mac\Home\Documents\ArcGIS\BreezyPt2010_v2.gdb"
+arcpy.env.workspace=home= r"\\Mac\Home\Documents\ArcGIS\BreezyPt2012_v2.gdb"
 
-year = '2010'
+year = '2012'
 site = 'BP'
 
 # Site-specific values
@@ -37,7 +38,7 @@ MLW = -1.17 						# MLW offset from MHW # Beach height adjustment (relative to M
 dMHW = -.46
 
 AskUserToSelectInputs = False        # User selects each input feature class at beginning of process
-deletePtsWithZfill = True           # If True, dune points with elevations of fill (-99999) will be deleted
+deletePtsWithZfill = False          # If True, dune points with elevations of fill (-99999) will be deleted
 CreateMHWline = False
 
 extendedTransects = site+"_extTransects" # Created MANUALLY: see TransExtv4Notes.txt
@@ -65,7 +66,6 @@ extendlength = 2000                      # extended transects distance (m) IF NE
 dh2trans = '{}{}_DH2trans'.format(site,year)							# DHigh within 10m
 dl2trans = site+year+'_DL2trans'						# DLow within 10m
 arm2trans = site+year+'_arm2trans'
-arm2transZ = site+year+'_arm2trans_withZ'
 oceanside_auto = site+year+'_MHWfromSLPs'
 shl2trans = site+year+'_SHL2trans'							# beach slope from lidar within 10m of transect
 MLWpts = site+year+'_MLW2trans'                       # MLW points calculated during Beach Width calculation
@@ -84,6 +84,14 @@ armz = 'Arm_z'
 #tranSin = site+year+'_trans_SinglePart_temp' 				# Single part transects
 #tranSplit = site+year+'_trans_5mSeg_temp' 			# Transect Segments (5m)
 #transPts_presort = site+year+'_trans_5mPts_presort_temp'
+
+#### Expected value ranges
+dhz_range = [0,10]
+dlz_range = [0,10]
+slslp_range = [-1,-0.005]
+armz_range = [0,20]
+
+bwidth =[1,500]
 
 """
 Check input data
@@ -105,6 +113,7 @@ ShorelinePts = ReProject(ShorelinePts,ShorelinePts+'_nad',4269)
 dhPts = SetInputFCname(home, 'dune crest points (dhPts)', dhPts)
 dlPts = SetInputFCname(home, 'dune toe points (dlPts)', dlPts)
 ShorelinePts = SetInputFCname(home, 'shoreline points (ShorelinePts)', ShorelinePts)
+
 if AskUserToSelectInputs:
     ans = pythonaddins.MessageBox('Delete points with fill Z values?', 'Dune metrics',4) #False           # If True, dune points with elevations of fill (-99999) will be deleted
     deletePtsWithZfill=True if ans=='Yes' else False
@@ -181,6 +190,7 @@ Create Extended transects, DH & DL points within 10m of transects
 Requires DH, DL, and SHL points, NA transects
 '''
 print "Starting Part 1"
+print "Should take just a few minutes"
 startPart1 = time.clock()
 
 # Extend transects if not already
@@ -225,22 +235,22 @@ arcpy.DeleteField_management(extendedTransects,shlfields) #In case of reprocessi
 arcpy.JoinField_management(extendedTransects,"TRANSORDER",shl2trans,'TRANSORDER',shlfields)
 
 
-if not arcpy.Exists(arm2transZ):
+if not arcpy.Exists(arm2trans):
     # Create armor points with XY and LatLon fields
     DeleteExtraFields(armorLines)
     arcpy.Intersect_analysis((armorLines,extendedTransects), tempfile, output_type='POINT')
-    AddXYAttributes(os.path.join(home,tempfile),arm2trans,'Arm')
+    AddXYAttributes(os.path.join(home,tempfile),arm2trans+'_temp','Arm')
     # Get elevation at points
-    arcpy.MultipartToSinglepart_management(arm2trans,arm2transZ)
+    arcpy.MultipartToSinglepart_management(arm2trans+'_temp',arm2trans)
     if arcpy.Exists(elevGrid_5m):
-        arcpy.sa.ExtractMultiValuesToPoints(arm2transZ,elevGrid_5m) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
-        arcpy.AlterField_management(arm2transZ,elevGrid_5m,armz,armz)
+        arcpy.sa.ExtractMultiValuesToPoints(arm2trans,elevGrid_5m) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
+        arcpy.AlterField_management(arm2trans,elevGrid_5m,armz,armz)
     else:
-        arcpy.AddField_management(arm2transZ,armz)
+        arcpy.AddField_management(arm2trans,armz)
 
 armorfields = ['Arm_Lon','Arm_Lat','Arm_easting','Arm_northing','Arm_z']
 arcpy.DeleteField_management(extendedTransects,armorfields) #In case of reprocessing
-arcpy.JoinField_management(extendedTransects,"TRANSORDER",arm2transZ,'TRANSORDER',armorfields)
+arcpy.JoinField_management(extendedTransects,"TRANSORDER",arm2trans,'TRANSORDER',armorfields)
 # How do I know which point will be encountered first? - don't want those in back to take the place of
 
 # Dune metrics

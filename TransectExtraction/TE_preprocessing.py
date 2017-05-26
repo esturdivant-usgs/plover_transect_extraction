@@ -1,153 +1,195 @@
-"""
-Created by: Emily Sturdivant (esturdivant@usgs.gov)
-Date: April 11, 2016
+
+'''
+Preprocessing for Deep dive Transect Extraction
+Requires: python 2.7, Arcpy
+Author: Emily Sturdivant
+email: esturdivant@usgs.gov
+Copied from TE_MASTER_v5 on 5/1/17
+
+Notes:
+    Run in ArcMap python window;
+    Turn off "auto display" in ArcMap preferences, In Geoprocessing Options,
+        uncheck display results of geoprocessing...
+    Spatial reference used is NAD 83 UTM 18N: arcpy.SpatialReference(26918)
+    see TransExtv4Notes.txt for more
+
+'''
+import os
+import sys
+import time
+import shutil
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+# path to TransectExtraction module
+if sys.platform == 'win32':
+    script_path = r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction"
+    sys.path.append(script_path) # path to TransectExtraction module
+    import arcpy
+    import pythonaddins
+    from TE_functions_arcpy import *
+if sys.platform == 'darwin':
+    script_path = '/Users/esturdivant/GitHub/plover_transect_extraction/TransectExtraction'
+    sys.path.append(script_path)
+from TE_config import *
+from TE_functions import *
 
 
-This routine preprocesses layers for use in TransectExtraction, including:
-- DEM - saves the projected 1m resolution DEM in siteyear gdb and produces 5m resolution DEM as well
-- full shoreline polygon = MHW isoline from DEM
-- extended transects with correctly sorted TransOrder IDs
-
-Steps before running:
-- confirm/modify the location of the original DEM
-- create a siteyear gdb if it does not already exist
-
-- from the original transects file, save the transects pertaining to the site as [Site]_LTtransects.
-- manually edit the LTtransects to add transects to gaps
-"""
-
-import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
-from TransectExtraction import *
-from TE_config_Forsythe2014 import *
+start = time.clock()
 
 """
-SET VALUES
+Pre-processing
 """
-trans_orig = os.path.join(home, "{site}_LTorig_utm".format(**SiteYear_strings))
-trans_presort = "trans_presort"
-trans_sort_1 = "{site}_trans_sorted".format(**SiteYear_strings)
-trans_out = "{site}_extTrans".format(**SiteYear_strings)
-trans_temp = "trans_temp"
-sortfield = 'sort_ID'
-trans_orig = SetInputFCname(home, 'Original National Assessment Transects', trans_orig)
-"""
-PROCESSING
-"""
-# TRANSECTS
-"""
-#rawtransects = SetInputFCname(home, 'Raw transects', 'rawtransects')
-# Extend original transects to bay line if not already
-if arcpy.Exists(gen_bay_line):
-    # Select lines based on azimuth... so that they will not end up intersecting each other.
-    # Select lines that still need to be extended. Include in selection the generalized bay line.
-    arcpy.Merge_management([rawtransects, gen_bay_line],trans_temp)
-    #arcpy.CopyFeatures_management(rawtransects, trans_temp)
-    arcpy.ExtendLine_edit(trans_temp, extend_to="FEATURE")
-    # un-select generalized bay line
-    arcpy.DeleteFeatures_management(rawtransects)
-    arcpy.Append_management(trans_temp, rawtransects)
+# Check presence of default files in gdb
+e_trans = SetInputFCname(home, 'extendedTrans', extendedTrans, system_ext=False)
+t_trans = SetInputFCname(home, 'extTrans_tidy', extTrans_tidy, False)
+i_name = SetInputFCname(home, 'inlets delineated (inletLines)', inletLines, False)
+dhPts = SetInputFCname(home, 'dune crest points (dhPts)', dhPts)
+dlPts = SetInputFCname(home, 'dune toe points (dlPts)', dlPts)
+ShorelinePts = SetInputFCname(home, 'shoreline points (ShorelinePts)', ShorelinePts)
+armorLines = SetInputFCname(home, 'beach armoring lines (armorLines)', armorLines)
+bb_name = SetInputFCname(home, 'barrier island polygon (barrierBoundary)',
+                         barrierBoundary, False)
+new_shore = SetInputFCname(home, 'shoreline between inlets', shoreline, False)
+elevGrid_5m = SetInputFCname(home, 'DEM raster at 5m res (elevGrid_5m)',
+                             elevGrid_5m, False)
+
+#%% DUNE POINTS
+# Replace fill values with Null
+ReplaceValueInFC(dhPts, oldvalue=fill, newvalue=None, fields=["dhigh_z"])
+ReplaceValueInFC(dlPts, oldvalue=fill, newvalue=None, fields=["dlow_z"])
+ReplaceValueInFC(ShorelinePts, oldvalue=fill, newvalue=None, fields=["slope"])
+# Populate ID with OID?
+
+#%% INLETS
+if not i_name:
+    arcpy.CreateFeatureclass_management(home, inletLines, 'POLYLINE',
+        spatial_reference=arcpy.SpatialReference(proj_code))
+    print("{} created. Now we'll stop for you to manually create lines at each inlet.")
     exit()
 else:
-    ExtendLine(rawtransects,extendedTransects,extendlength,proj_code)
-    if len(arcpy.ListFields(extendedTransects,'OBJECTID*')) == 2:
-        ReplaceFields(extendedTransects,{'OBJECTID':'OID@'})
+    inletLines = i_name
+
+#%% ELEVATION
+if not arcpy.Exists(elevGrid_5m):
+    ProcessDEM(elevGrid, elevGrid_5m, utmSR)
+
+#%% BOUNDARY POLYGON
+if not bb_name:
+    # Inlet lines must intersect MHW
+    bndpoly = DEMtoFullShorelinePoly(elevGrid_5m, '{site}{year}'.format(**SiteYear_strings), MTL, MHW, inletLines, ShorelinePts)
+    # Eliminate any remnant polygons on oceanside
+    if pythonaddins.MessageBox('Ready to delete selected features from {}?'.format(bndpoly), '', 4) == 'Yes':
+        arcpy.DeleteFeatures_management(bndpoly)
+    else:
+        print("Ok, redo.")
+        exit()
+
+    barrierBoundary = NewBNDpoly(bndpoly, ShorelinePts, barrierBoundary, '25 METERS', '50 METERS')
+else:
+    barrierBoundary = bb_name
+
+if not arcpy.Exists(barrierBoundary):
+    barrierBoundary = NewBNDpoly(bndpoly, ShorelinePts, barrierBoundary, '25 METERS', '50 METERS')
+
+#%% SHORELINE
+if not new_shore:
+    shoreline = CreateShoreBetweenInlets(barrierBoundary, inletLines, shoreline, ShorelinePts, proj_code)
+else:
+    shoreline = new_shore
+
+#%% TRANSECTS - extendedTrans
+# Copy transects from archive directory
+if not e_trans:
+    print("Use TE_preprocess_transects.py to create the transects for processing.")
+    exit()
 """
-CopyAndWipeFC(trans_orig, trans_presort)
-pythonaddins.MessageBox("Now we'll stop so you can copy existing groups of transects to fill in the gaps. If possible avoid overlapping transects", "Created {}. Proceed with manual processing.".format(trans_presort), 0)
+~~ start transect work
+"""
+# if transects already exist, but without correct field ID, use DuplicateField()
+# DuplicateField(extendedTransects, 'TransOrder', tID_fld)
+# arcpy.FeatureClassToFeatureClass_conversion(extendedTransects, trans_dir, os.path.basename(orig_extTrans))
+# DeleteExtraFields(orig_extTrans, [tID_fld])
+# arcpy.FeatureClassToFeatureClass_conversion(orig_extTrans, trans_dir, os.path.basename(orig_tidytrans))
+
+# Create extendedTrans, LT transects with gaps filled and lines extended
+trans_presort = 'trans_presort_temp'
+LTextended = 'LTextended'
+multi_sort = True # True indicates that the transects must be sorted in batches to preserve order
+trans_sort_1 = 'trans_sort_temp'
+extTrans_sort_ext = 'extTrans_temp'
+t_trans = True
+
+orig_trans = orig_trans+'_nad83'
+
+arcpy.env.workspace = os.path.dirname(rst_transIDpath)
+# arcpy.env.workspace = trans_dir
+# Extend
+ExtendLine(fc=orig_trans, new_fc=LTextended, distance=extendlength, proj_code=proj_code)
+# 1. Copy only the geometry of transects to use as material for filling gaps
+CopyAndWipeFC(LTextended, trans_presort, ['sort_ID'])
+print("MANUALLY: use groups of existing transects in new FC '{}' to fill gaps. Avoid overlapping transects as much as possible".format(trans_presort))
 exit()
 
-# Delete any NAT transects in the new transects layer
-arcpy.SelectLayerByLocation_management(trans_presort, "ARE_IDENTICAL_TO", trans_orig) # or "SHARE_A_LINE_SEGMENT_WITH"
-if int(arcpy.GetCount_management(trans_presort)[0]) > 0:
-    arcpy.DeleteFeatures_management(trans_presort) # if there are old transects in new transects, delete them
-# Append relevant NAT transects to the new transects
-arcpy.SelectLayerByLocation_management(trans_orig, "INTERSECT", barrierBoundary)
-arcpy.Append_management(trans_orig, trans_presort)
-pythonaddins.MessageBox("Now we'll stop so you can check that the transects are ready to be sorted either from the bottom up or top down. ", "Stop for manual processing.".format(trans_presort), 0)
-exit()
 
-# Sort and add unique ID
-# Select first batch (48)
-trans_sort_1, count1 = SpatialSort(trans_presort,trans_sort_1,"LR",reverse_order=False,sortfield="sort_ID")
 
-if multi_batch_sort:
-    # Select second batch
-    trans_sort_2 = "transects_sort2"
-    # azimuth >
-    trans_sort_2, count2 = SpatialSort(trans_presort,trans_sort_2,"LR",reverse_order=True, startcount=count1)
-    #arcpy.Append_management(trans_sort_2, trans_sort_1)
-    # Select third batch
-    trans_sort_3 = "transects_sort3"
-    startcount=count1+count2
-    trans_sort_3, count3 = SpatialSort(trans_presort,trans_sort_3,"LL",reverse_order=False, startcount=startcount)
-    #arcpy.Append_management(trans_sort_3, trans_sort_1)
-    # Select fourth batch
-    trans_sort_4 = "transects_sort4"
-    startcount=count1+count2+count3
-    trans_sort_4, count4 = SpatialSort(trans_presort,trans_sort_4,"LL",reverse_order=False,startcount=startcount)
-    arcpy.Append_management([trans_sort_2, trans_sort_3, trans_sort_4], trans_sort_1)
-
-    arcpy.Sort_management(trans_sort_1, extendedTransects, [['SORT_ID','ASCENDING']])
-
-ExtendLine(trans_sort_1,extendedTransects,extendlength,proj_code)
-if len(arcpy.ListFields(extendedTransects,'OBJECTID*')) == 2:
-    ReplaceFields(extendedTransects,{'OBJECTID':'OID@'})
-"""
-Previous code
-"""
-#### Prepare transects ####
-# Make copy of transects and manually fill the gaps. Then select all the new transect and run the next piece of code.
-arcpy.CopyFeatures_management(old_transects,transects_presort)
-
-# Replace values of copied transects with Null.
-with arcpy.da.UpdateCursor(transects_presort, ['OBJECTID','TRANSORDER','LRR','LR2','LSE','LCI90']) as cursor:
-    for row in cursor:
-        cursor.updateRow([None, None, None, None, None, None])
-
-# To be completed after manual steps to fill gaps, making sure that the new transects have null values
-# Split the set of transects to ensure that the sort from __ corner is accurate.
-extTransects = PreprocessTransects(site,old_transects,sort_corner='LL')
-
-# Experimental alternative:
+trans_sort_1, count1 = PrepTransects_part2(trans_presort, LTextended, barrierBoundary, trans_sort_1=trans_sort_1, sort_corner="LR")
+if not multi_sort:
+    SortTransectsFromSortLines(trans_presort, extendedTrans, sort_lines=[], sortfield=tID_fld, sort_corner='LL')
 # Create lines to use to sort new transects
-arcpy.CreateFeatureclass_management(home,'sort_line1', "POLYLINE", spatial_reference=arcpy.SpatialReference(proj_code))
-arcpy.CopyFeatures_management('sort_line1','{}\\sort_line2'.format(home))
-sort_line_list = ['sort_line1','sort_line2']
+if multi_sort:
+    sort_lines = 'sort_lines'
+    arcpy.CreateFeatureclass_management(trans_dir, sort_lines, "POLYLINE", spatial_reference=arcpy.SpatialReference(proj_code))
+    print("MANUALLY: Add features to sort_lines.")
+    exit()
+    SortTransectsFromSortLines(trans_presort, extendedTrans, sort_lines, sortfield=tID_fld)
 
-SortTransectsFromSortLines(in_fc, base_fc, sort_line_list, sortfield=transUIDfield,sort_corner='LL')
+if len(arcpy.ListFields(extendedTrans, 'OBJECTID*')) == 2:
+    ReplaceFields(extendedTrans, {'OBJECTID': 'OID@'})
 
-##### Merge beach metrics #####
-arcpy.env.workspace = DHdir
-outfile = r"{}\{}".format(home,dhPts)
-arcpy.Merge_management(arcpy.ListFiles('*.shp'),outfile)
+# TRANSECTS - extTrans_tidy
+if not t_trans:
+    print("Manual work seems necessary to remove transect overlap")
+    print("Select the boundary lines between groups of overlapping transects")
+    # Select the boundary lines between groups of overlapping transects
+    exit()
+if not t_trans:
+    # Copy only the selected lines
+    overlapTrans_lines = 'overlapTrans_lines_temp'
+    arcpy.CopyFeatures_management(orig_extTrans, overlapTrans_lines)
+    arcpy.SelectLayerByAttribute_management(orig_extTrans, "CLEAR_SELECTION")
+    # Split transects at the lines of overlap.
+    trans_x = 'overlap_points_temp'
+    arcpy.Intersect_analysis([orig_extTrans, overlapTrans_lines], trans_x,
+                             'ALL', output_type="POINT")
+    arcpy.SplitLineAtPoint_management(orig_extTrans, trans_x, orig_tidytrans)
+    print("MANUALLY: Select transect segments to be deleted. ")
+    exit()
+if not t_trans:
+    arcpy.DeleteFeatures_management(orig_tidytrans)
+    # arcpy.CopyFeatures_management(orig_tidytrans, extTrans_tidy_archive)
+    extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
 
-arcpy.env.workspace = DLdir
-outfile = r"{}\{}".format(home,dlPts)
-arcpy.Merge_management(arcpy.ListFiles('*.shp'),outfile)
+#%% Create ID raster
+arcpy.env.workspace = os.path.dirname(rst_transIDpath)
+if not arcpy.Exists(os.path.basename(rst_transIDpath)):
+    outEucAll = arcpy.sa.EucAllocation(orig_tidytrans, maximum_distance=50,
+                                       cell_size=cell_size, source_field=tID_fld)
+    outEucAll.save(os.path.basename(rst_transIDpath))
+arcpy.env.workspace = home
 
-arcpy.env.workspace = SLdir
-outfile = r"{}\{}".format(home,ShorelinePts)
-arcpy.Merge_management(arcpy.ListFiles('*.shp'),outfile)
-
-# DEM
-elevGrid = ProcessDEM(site,year,old_dem,proj_code)
-
-# Full shoreline
-RasterToLandPerimeter(elevGrid,bndMHW,MHW)
-
-# Inlet lines
-inletLines = '{site}{year}_inletLines'.format(**SiteYear_strings)
-arcpy.CreateFeatureclass_management(home,inletLines,'POLYLINE',spatial_reference=arcpy.SpatialReference(proj_code))
+#%% Shoreline-transect intersect points
+arcpy.Intersect_analysis((shoreline, extendedTrans), intersect_shl2trans, output_type='POINT')
+shl2trans = 'ParkerRiver2014_SLpts2trans'
+#FIXME: shljoin = JOIN closest feature in ShorelinePts to shl2trans
+# right click on intersect layer, and
+#fmap = 'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,SHL2trans_temp,sort_ID,-1,-1; ID "ID" true true false 4 Float 0 0 ,First,#,\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\Delmarva\Assateague\2014\Assateague2014.gdb\Assateague2014_SLpts,ID,-1,-1'
+# arcpy.SpatialJoin_analysis(shl2trans, os.path.join(home, ShorelinePts), 'join_temp','#','#', fmap, "CLOSEST", pt2trans_disttolerance) # create join_temp
 
 """
-arcpy.Sort_management(ShorelinePts,ShorelinePts+'_sort',"lat")
-with arcpy.da.UpdateCursor(ShorelinePts+'_sort',["OBJECTID","OID"]) as cursor:
-    for row in cursor:
-        cursor.updateRow([row[0], row[0]])
+~~ end transect work
 """
-#arcpy.PointsToLine_management(ShorelinePts, MHW_oceanside,Sort_Field="OID")
-CreateShoreBetweenInlets(ShorelinePts,inletLines,shoreline,proj_code=26918)
 
+print("Pre-processing completed.")
 
-NewBNDpoly(bndMHW,ShorelinePts,barrierBoundary,'25 METERS','25 METERS')
+DeleteTempFiles()

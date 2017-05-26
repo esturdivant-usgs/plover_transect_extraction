@@ -14,7 +14,7 @@ Notes:
 '''
 
 import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(r"\\Mac\Home\Documents\scripting\TransectExtraction") # path to TransectExtraction module
+sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
 from TransectExtraction import *
 
 start = time.clock()
@@ -27,9 +27,10 @@ arcpy.CheckOutExtension("Spatial") 											# Checkout Spatial Analysis extens
 #arcpy.env.workspace=home= r'D:\ben_usgs\stippaData\FireIsland2012\FireIsland2012.gdb'
 ############ Inputs #########################
 
-arcpy.env.workspace=home= r"\\Mac\Home\Documents\ArcGIS\BreezyPt2010_v2.gdb"
+arcpy.env.workspace=home= r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2014\BP2014.gdb"
+out_dir = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2014\Extracted_Data"
 
-year = '2010'
+year = '2014'
 site = 'BP'
 
 # Site-specific values
@@ -37,8 +38,9 @@ MLW = -1.17 						# MLW offset from MHW # Beach height adjustment (relative to M
 dMHW = -.46
 
 AskUserToSelectInputs = False        # User selects each input feature class at beginning of process
-deletePtsWithZfill = True           # If True, dune points with elevations of fill (-99999) will be deleted
+deletePtsWithZfill = False          # If True, dune points with elevations of fill (-99999) will be deleted
 CreateMHWline = False
+AggregateElevation = False
 
 extendedTransects = site+"_extTransects" # Created MANUALLY: see TransExtv4Notes.txt
 dhPts = site+year+'_DHpts'				# Dune crest
@@ -65,7 +67,6 @@ extendlength = 2000                      # extended transects distance (m) IF NE
 dh2trans = '{}{}_DH2trans'.format(site,year)							# DHigh within 10m
 dl2trans = site+year+'_DL2trans'						# DLow within 10m
 arm2trans = site+year+'_arm2trans'
-arm2transZ = site+year+'_arm2trans_withZ'
 oceanside_auto = site+year+'_MHWfromSLPs'
 shl2trans = site+year+'_SHL2trans'							# beach slope from lidar within 10m of transect
 MLWpts = site+year+'_MLW2trans'                       # MLW points calculated during Beach Width calculation
@@ -84,6 +85,14 @@ armz = 'Arm_z'
 #tranSin = site+year+'_trans_SinglePart_temp' 				# Single part transects
 #tranSplit = site+year+'_trans_5mSeg_temp' 			# Transect Segments (5m)
 #transPts_presort = site+year+'_trans_5mPts_presort_temp'
+
+#### Expected value ranges
+dhz_range = [0,10]
+dlz_range = [0,10]
+slslp_range = [-1,-0.005]
+armz_range = [0,20]
+
+bwidth =[1,500]
 
 """
 Check input data
@@ -105,15 +114,17 @@ ShorelinePts = ReProject(ShorelinePts,ShorelinePts+'_nad',4269)
 dhPts = SetInputFCname(home, 'dune crest points (dhPts)', dhPts)
 dlPts = SetInputFCname(home, 'dune toe points (dlPts)', dlPts)
 ShorelinePts = SetInputFCname(home, 'shoreline points (ShorelinePts)', ShorelinePts)
-if AskUserToSelectInputs:
-    ans = pythonaddins.MessageBox('Delete points with fill Z values?', 'Dune metrics',4) #False           # If True, dune points with elevations of fill (-99999) will be deleted
+
+if deletePtsWithZfill:
+    ans = pythonaddins.MessageBox('Are you sure you want to delete points with fill Z values?', 'Dune metrics',4) #False           # If True, dune points with elevations of fill (-99999) will be deleted
     deletePtsWithZfill=True if ans=='Yes' else False
 if deletePtsWithZfill:
-    #arcpy.SelectLayerByAttribute_management(orig_dhPts,'NEW_SELECTION','dhigh_Z > %d' % fill)
     arcpy.CopyFeatures_management(dhPts,dhPts+'_orig')
+    #ReplaceValueInFC(dhPts,['dhigh_z'],None,fill)
     DeleteFeaturesByValue(dhPts,['dhigh_z'])
-    #arcpy.SelectLayerByAttribute_management(orig_dlPts,'NEW_SELECTION','dlow_Z > %d' % fill)
+
     arcpy.CopyFeatures_management(dlPts,dlPts+'_orig')
+    #ReplaceValueInFC(dlPts,['dlow_z'],None,fill)
     DeleteFeaturesByValue(dlPts,['dlow_z'])
 # Replace fill values with Null
 ReplaceValueInFC(dhPts,["dhigh_z"])
@@ -181,6 +192,7 @@ Create Extended transects, DH & DL points within 10m of transects
 Requires DH, DL, and SHL points, NA transects
 '''
 print "Starting Part 1"
+print "Should take just a few minutes"
 startPart1 = time.clock()
 
 # Extend transects if not already
@@ -225,22 +237,21 @@ arcpy.DeleteField_management(extendedTransects,shlfields) #In case of reprocessi
 arcpy.JoinField_management(extendedTransects,"TRANSORDER",shl2trans,'TRANSORDER',shlfields)
 
 
-if not arcpy.Exists(arm2transZ):
+if not arcpy.Exists(arm2trans):
     # Create armor points with XY and LatLon fields
     DeleteExtraFields(armorLines)
     arcpy.Intersect_analysis((armorLines,extendedTransects), tempfile, output_type='POINT')
-    AddXYAttributes(os.path.join(home,tempfile),arm2trans,'Arm')
+    AddXYAttributes(tempfile,arm2trans,'Arm')
     # Get elevation at points
-    arcpy.MultipartToSinglepart_management(arm2trans,arm2transZ)
     if arcpy.Exists(elevGrid_5m):
-        arcpy.sa.ExtractMultiValuesToPoints(arm2transZ,elevGrid_5m) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
-        arcpy.AlterField_management(arm2transZ,elevGrid_5m,armz,armz)
+        arcpy.sa.ExtractMultiValuesToPoints(arm2trans,elevGrid_5m) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
+        arcpy.AlterField_management(arm2trans,elevGrid_5m,armz,armz)
     else:
-        arcpy.AddField_management(arm2transZ,armz)
+        arcpy.AddField_management(arm2trans,armz)
 
 armorfields = ['Arm_Lon','Arm_Lat','Arm_easting','Arm_northing','Arm_z']
 arcpy.DeleteField_management(extendedTransects,armorfields) #In case of reprocessing
-arcpy.JoinField_management(extendedTransects,"TRANSORDER",arm2transZ,'TRANSORDER',armorfields)
+arcpy.JoinField_management(extendedTransects,"TRANSORDER",arm2trans,'TRANSORDER',armorfields)
 # How do I know which point will be encountered first? - don't want those in back to take the place of
 
 # Dune metrics
@@ -617,43 +628,13 @@ else:
     arcpy.sa.ExtractMultiValuesToPoints(tranSplitPts,[[elevGrid_5m,'PointZ'],[slopeGrid,'PointSlp']])
     arcpy.CopyFeatures_management(tranSplitPts,pts_elevslope)
 
-# Recharge and Habitat extract
-"""
-#Recharge
-rechFields = ['zone','Rech','class']
-arcpy.SpatialJoin_analysis(tranSplitPts,recharge,"rechargeJoin","JOIN_ONE_TO_ONE","KEEP_ALL") ### may take a while -> not too long
-
-#assign new field names VegZone, VegRech, VegClass	and copy from join table
-arcpy.JoinField_management(tranSplitPts,'SplitSort',"rechargeJoin",'SplitSort',rechFields) ##################### may take a while
-arcpy.AddField_management(tranSplitPts,"VegZone","SHORT")
-arcpy.AddField_management(tranSplitPts,"VegRech","DOUBLE")
-arcpy.AddField_management(tranSplitPts,"VegClass","TEXT")
-arcpy.CalculateField_management(tranSplitPts, 'VegZone', '!zone!',"PYTHON")
-arcpy.CalculateField_management(tranSplitPts, 'VegRech', '!Rech!',"PYTHON")
-arcpy.CalculateField_management(tranSplitPts, 'VegClass', '!class!',"PYTHON")
-arcpy.DeleteField_management(tranSplitPts,["zone","Rech",'class'])
-arcpy.Delete_management("rechargeJoin")
-
-#NPS habitat
-habFields = ['Veg_Type']
-arcpy.SpatialJoin_analysis(tranSplitPts,habitat,"habitatJoin","JOIN_ONE_TO_ONE","KEEP_ALL") ### may take a while -> not too long
-
-#assign new field name HabNPS and copy from join table
-arcpy.JoinField_management(tranSplitPts,'SplitSort',"habitatJoin",'SplitSort',habFields) ##################### may take a while
-arcpy.AddField_management(tranSplitPts,"HabNPS","TEXT")
-arcpy.CalculateField_management(tranSplitPts, 'HabNPS', '!Veg_Type!',"PYTHON")
-arcpy.DeleteField_management(tranSplitPts,'Veg_Type')
-arcpy.Delete_management("habitatJoin")
-
-#Transect average Recharge
-#arcpy.Intersect_analysis('Transects_North_MorphVariables_050812 #;Recharge_modNov18_subset #', r'F:\ASIS\TransectPopulation_v2\Tools\Testing_gdb.gdb\trans_rech_temp', 'ALL', '#', 'INPUT')
-#arcpy.DeleteField_management('trans_rech_temp', 'FID_Transects_North_MorphVariables_050812;WidthFull;WidthLand;percBeach;percSF;percWet;percUnk;DistToCana;LRR;beach_h;beach_w;toe_dl_z;crest_dh_z;slp_sh_slo;Start_lon;Start_lat;max_z;Nourish;D_B_Constr;OldInlet;Infrastr;DistDH;DistDL;Shape_Length_1;FID_Recharge_modNov18_subset;row;column_;zone;Rech;Conc;Depth')
-"""
-
-arcpy.CopyFeatures_management(tranSplitPts,transSplitPts_final)
+#arcpy.CopyFeatures_management(tranSplitPts,transSplitPts_final)
+arcpy.FeatureClassToFeatureClass_conversion(tranSplitPts,home,transSplitPts_final)
 
 arcpy.MakeTableView_management(tranSplitPts,transSplitPts_table)
 ReplaceValueInFC(transSplitPts_table,[], None, fill)
+
+arcpy.FeatureClassToFeatureClass_conversion(transSplitPts_final,out_dir,transSplitPts_final+'.shp')
 
 finalmessage = "\nNow enter the USER: \n\n" \
       "1. Export the final feature class ("+tranSplitPts_final+") as Shapefile. \n" \
@@ -664,61 +645,47 @@ finalmessage = "\nNow enter the USER: \n\n" \
 print finalmessage
 pythonaddins.MessageBox(finalmessage, 'Final Steps')
 
-
-end = time.clock()
-duration = end - start
-hours, remainder = divmod(duration, 3600)
-minutes, seconds = divmod(remainder, 60)
-print "\nProcessing completed in %dh:%dm:%fs" % (hours, minutes, seconds)
-
 '''___________________________________________________________________________________________________________
-FIXING
+FIXES
+______________________________________________________________________________________________________________
+Replace null values (for matlab)
+Requires:  Segment Points, elevation, recharge, Habitat
 '''
 
-import arcpy, time, os, pythonaddins, sys, math
-sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction") # path to TransectExtraction module
-from TransectExtraction import *
-arcpy.env.overwriteOutput = True 											# Overwrite output?
-arcpy.CheckOutExtension("Spatial") 											# Checkout Spatial Analysis extension
-year = '2012'
-site = 'BP'
-code = 'bp12'
-arcpy.env.workspace=home= r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2012\BP2012.gdb"
-out_dir = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2012\Extracted_Data"
-extendedTransects = site+"_extTransects_"+year # Created MANUALLY: see TransExtv4Notes.txt
-fill = -99999	  					# Replace Nulls with
-baseName = 'trans_clip_working'                     # Clipped transects
+rst_transID = "{}_rstTransID".format(site)
+transPts_ben = 'Rck2014_trans_5mPts_ALL_jan2017'
 
-transPts_ben = 'Rck{}_trans_5mPts_ALL_jan2017'.format(year)
-rst_transID = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\All_Years\{}_transects.gdb\{}_transID".format(site,site)
-
-trans_bw_ben = "{}{}_transBW_ben_jan2017".format(site,year)
-rst_transPopulated = "{}{}_rstTrans_ben_jan2017".format(site,year)
-rst_trans_grid = "{}_bw_jan17".format(code)
-
-# Make sort_ID field by copying values from TransOrder
-transUIDfield = 'sort_ID'
-arcpy.AddField_management(transPts_ben, transUIDfield, "LONG")
+arcpy.AddField_management(transPts_ben, "sort_ID", "SHORT")
 with arcpy.da.UpdateCursor(transPts_ben, ["TransOrder", "sort_ID"]) as cursor:
     for row in cursor:
         cursor.updateRow([row[0], row[0]])
 
-# Aggregate by transect
+# Create BP ID raster
+outEucAll = arcpy.sa.EucAllocation(extendedTransects, maximum_distance=50, cell_size=5, source_field=transUIDfield)
+outEucAll.save(rst_transID)
+
+transPts_ben = 'Rck2014_trans_5mPts_ALL_jan2017'
+rst_transID = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\All_Years\{}_transID".format(site)
+transUIDfield = 'sort_ID'
+trans_bw_ben = "{}{}_transBW_ben_jan2017".format(site,year)
+rst_transPopulated = "{}{}_rstTrans_ben_jan2017".format(site,year)
+rst_trans_grid = "bp14_bw_jan17"
+
+# save max and mean in out_stats table using Statistics_analysis
 arcpy.Statistics_analysis(transPts_ben, trans_bw_ben, [['uBW', 'MEAN']], transUIDfield)
 
-#RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
+RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
 #arcpy.MakeTableView_management(in_tbl, 'tableview')
 arcpy.MakeRasterLayer_management(rst_transID, 'rst_lyr')
-# arcpy.RemoveJoin_management("rst_lyr", trans_bw_ben)
-
-# arcpy.JoinField_management('rst_lyr', 'Value', trans_bw_ben, transUIDfield, 'MEAN_uBW')
 arcpy.AddJoin_management('rst_lyr', 'Value', trans_bw_ben, transUIDfield)
 arcpy.CopyRaster_management('rst_lyr', rst_transPopulated)
 
-# arcpy.DeleteField_management(rst_transPopulated, ['OBJECTID_1', "FREQUENCY"])
-# fldlist = [f.name for f in arcpy.ListFields(rst_transPopulated)]
-# fldlist.remove(transUIDfield)
+arcpy.DeleteField_management(rst_transPopulated, ['OBJECTID_1', "FREQUENCY"])
+
+fldlist = [f.name for f in arcpy.ListFields(rst_transPopulated)]
+fldlist.remove(transUIDfield)
 ReplaceValueInFC(rst_transPopulated, None, fill, fields=fldlist)
 ReplaceValueInFC(rst_transPopulated, fill, 9999, fields=fldlist)
+
 
 arcpy.CopyRaster_management(rst_transPopulated, os.path.join(out_dir, rst_trans_grid))

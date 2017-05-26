@@ -680,26 +680,26 @@ sys.path.append(r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtractio
 from TransectExtraction import *
 arcpy.env.overwriteOutput = True 											# Overwrite output?
 arcpy.CheckOutExtension("Spatial") 											# Checkout Spatial Analysis extension
-year = '2012'
+year = '2010'
 site = 'BP'
-code = 'bp12'
-arcpy.env.workspace=home= r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2012\BP2012.gdb"
-out_dir = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\2012\Extracted_Data"
+code = 'bp10'
+arcpy.env.workspace=home= r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\{}\BP{}.gdb".format(year, year)
+out_dir = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\{}\Extracted_Data".format(year)
 extendedTransects = site+"_extTransects_"+year # Created MANUALLY: see TransExtv4Notes.txt
 fill = -99999	  					# Replace Nulls with
 baseName = 'trans_clip_working'                     # Clipped transects
-
 transPts_ben = 'Rck{}_trans_5mPts_ALL_jan2017'.format(year)
 rst_transID = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\All_Years\{}_transects.gdb\{}_transID".format(site,site)
-
 trans_bw_ben = "{}{}_transBW_ben_jan2017".format(site,year)
 rst_transPopulated = "{}{}_rstTrans_ben_jan2017".format(site,year)
 rst_trans_grid = "{}_bw_jan17".format(code)
+in_xls = r"\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\NewYork\BreezyPt\Gutierrez\{}.xlsx\Sheet1$".format(transPts_ben)
+
 
 # Make sort_ID field by copying values from TransOrder
 transUIDfield = 'sort_ID'
 arcpy.AddField_management(transPts_ben, transUIDfield, "LONG")
-with arcpy.da.UpdateCursor(transPts_ben, ["TransOrder", "sort_ID"]) as cursor:
+with arcpy.da.UpdateCursor(transPts_ben, ["TransOrder", transUIDfield]) as cursor:
     for row in cursor:
         cursor.updateRow([row[0], row[0]])
 
@@ -716,8 +716,9 @@ arcpy.AddJoin_management('rst_lyr', 'Value', trans_bw_ben, transUIDfield)
 arcpy.CopyRaster_management('rst_lyr', rst_transPopulated)
 
 # arcpy.DeleteField_management(rst_transPopulated, ['OBJECTID_1', "FREQUENCY"])
-# fldlist = [f.name for f in arcpy.ListFields(rst_transPopulated)]
-# fldlist.remove(transUIDfield)
+fldlist = [f.name for f in arcpy.ListFields(rst_transPopulated)]
+fldlist.remove(transUIDfield)
+fldlist = "*"
 ReplaceValueInFC(rst_transPopulated, None, fill, fields=fldlist)
 ReplaceValueInFC(rst_transPopulated, fill, 9999, fields=fldlist)
 
