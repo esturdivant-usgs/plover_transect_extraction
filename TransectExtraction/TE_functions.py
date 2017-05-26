@@ -8,12 +8,15 @@ import pandas as pd
 import numpy as np
 from operator import add
 
-def print_duration(start):
+def print_duration(start, suppress=False):
     duration = time.clock() - start
     hours, remainder = divmod(duration, 3600)
     minutes, seconds = divmod(remainder, 60)
-    print('TransectsToPointsDF() completed in {:.0f} hrs:{:.0f} mins:{} seconds'.format(hours, minutes, seconds))
-    return(duration)
+    duration_str = '{:.0f}:{:.0f}:{:.1f} seconds'.format(hours, minutes, seconds)
+    if not suppress:
+        print('Duration: {}'.format(duration_str))
+        return
+    return(duration_str)
 
 def newcoord(coords, dist):
     # From: gis.stackexchange.com/questions/71645/extending-line-by-specified-distance-in-arcgis-for-desktop
