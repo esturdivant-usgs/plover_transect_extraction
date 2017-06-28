@@ -55,10 +55,17 @@ def join_columns(df1, df2, id_fld='ID', how='outer'):
         df1 = df1.join(df2, how=how)
     return(df1)
 
-def adjust2mhw(df, MHW, fldlist=['DH_z', 'DL_z', 'Arm_z']):
+def adjust2mhw(df, MHW, fldlist=['DH_z', 'DL_z', 'Arm_z'], fill=-99999):
+    # Add elevation fields with values adjusted to MHW, stored in '[fieldname]mhw'
+    # If fill values present in df, replace with nan to perform adjustment and then replace
+    if any(df==fill):
+        input_fill = True
+        df.replace(fill, np.nan, inplace=True)
     for fld in fldlist:
         df = (df.drop(fld+'mhw', axis=1, errors='ignore')
                 .join(df[fld].subtract(MHW), rsuffix='mhw'))
+    if input_fill:
+        df.fillna(fill, inplace=True)
     return(df)
 
 def sort_pts(df, tID_fld='sort_ID', pID_fld='SplitSort'):

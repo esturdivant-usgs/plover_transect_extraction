@@ -24,4 +24,7 @@ siteyear = {
     'ParkerRiver2014':{'region': 'Massachusetts', 'site': 'ParkerRiver',
                     'year': '2014', 'code': 'pr14',
                     'MHW':1.22, 'MLW':-1.37, 'MTL':None},
+    'Forsythe2014':{'region': 'NewJersey', 'site': 'Forsythe',
+                    'year': '2014', 'code': 'ebf14',
+                    'MHW':0.43, 'MLW':-0.61, 'MTL':None},
     }

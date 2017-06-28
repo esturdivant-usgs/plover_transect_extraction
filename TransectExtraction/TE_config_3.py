@@ -38,28 +38,32 @@ if SiteYear_strings['site'] == 'Monomoy':
 else:
     maxDH = 2.5
 
+######## Set paths ################################################################
+# inputs
+csgg = r'\\IGSAGIEGGS-CSGG' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
+site_dir = os.path.join(csgg, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
+    SiteYear_strings['region'], SiteYear_strings['site'])
+home_gdb = '{site}{year}.gdb'.format(**SiteYear_strings)
+home = os.path.join(site_dir, SiteYear_strings['year'], home_gdb)
+
+trans_dir = os.path.join(site_dir, 'All_Years', SiteYear_strings['site']+'_transects.gdb')
+
+# working
+code_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extraction_code')
+working_dir = os.path.join(site_dir, SiteYear_strings['year'], 'working')
+temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'
+
+# outputs
+out_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extracted_Data')
+
+######## Set values ################################################################
+SiteYear_strings['home'] = home
+SiteYear_strings['site_dir'] = site_dir
 MHW = SiteYear_strings['MHW']
 MLW = SiteYear_strings['MLW']
 dMHW = -MHW                         # Beach height adjustment
 oMLW = MHW-MLW                      # MLW offset from MHW # Beach height adjustment (relative to MHW)
 SiteYear_strings['MTL'] = MTL = (MHW+MLW)/2
-
-######## Set paths ################################################################
-volume = r'\\IGSAGIEGGS-CSGG' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
-
-site_dir = os.path.join(volume, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
-    SiteYear_strings['region'], SiteYear_strings['site'])
-out_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extracted_Data')
-code_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extraction_code')
-working_dir = os.path.join(site_dir, SiteYear_strings['year'], 'working')
-temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'
-trans_dir = os.path.join(site_dir, 'All_Years', SiteYear_strings['site']+'_transects.gdb')
-home_gdb = '{site}{year}.gdb'.format(**SiteYear_strings)
-home = os.path.join(site_dir, SiteYear_strings['year'], home_gdb)
-
-SiteYear_strings['home'] = home
-SiteYear_strings['site_dir'] = site_dir
-
 if SiteYear_strings['region'] == 'Massachusetts' or SiteYear_strings['region'] == 'RhodeIsland' or SiteYear_strings['region'] == 'Maine':
     proj_code = 26919 # "NAD 1983 UTM Zone 19N"
 else:
