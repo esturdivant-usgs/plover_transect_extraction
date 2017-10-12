@@ -117,13 +117,11 @@ trans_presort = 'trans_presort_temp'
 LTextended = 'LTextended'
 multi_sort = True # True indicates that the transects must be sorted in batches to preserve order
 trans_sort_1 = 'trans_sort_temp'
-extTrans_sort_ext = 'extTrans_temp'
 t_trans = True
 
 orig_trans = orig_trans+'_nad83'
 
-arcpy.env.workspace = os.path.dirname(rst_transIDpath)
-# arcpy.env.workspace = trans_dir
+arcpy.env.workspace = trans_dir
 # Extend
 ExtendLine(fc=orig_trans, new_fc=LTextended, distance=extendlength, proj_code=proj_code)
 # 1. Copy only the geometry of transects to use as material for filling gaps
@@ -133,7 +131,7 @@ exit()
 
 
 
-trans_sort_1, count1 = PrepTransects_part2(trans_presort, LTextended, barrierBoundary, trans_sort_1=trans_sort_1, sort_corner="LR")
+PrepTransects_part2(trans_presort, LTextended, barrierBoundary)
 if not multi_sort:
     SortTransectsFromSortLines(trans_presort, extendedTrans, sort_lines=[], sortfield=tID_fld, sort_corner='LL')
 # Create lines to use to sort new transects
@@ -147,13 +145,13 @@ if multi_sort:
 if len(arcpy.ListFields(extendedTrans, 'OBJECTID*')) == 2:
     ReplaceFields(extendedTrans, {'OBJECTID': 'OID@'})
 
-# TRANSECTS - extTrans_tidy
-if not t_trans:
+# TRANSECTS - tidyTrans
+if not arcpy.Exists(orig_tidytrans):
     print("Manual work seems necessary to remove transect overlap")
     print("Select the boundary lines between groups of overlapping transects")
     # Select the boundary lines between groups of overlapping transects
     exit()
-if not t_trans:
+if not arcpy.Exists(orig_tidytrans):
     # Copy only the selected lines
     overlapTrans_lines = 'overlapTrans_lines_temp'
     arcpy.CopyFeatures_management(orig_extTrans, overlapTrans_lines)
@@ -165,6 +163,13 @@ if not t_trans:
     arcpy.SplitLineAtPoint_management(orig_extTrans, trans_x, orig_tidytrans)
     print("MANUALLY: Select transect segments to be deleted. ")
     exit()
+
+# alternative:
+# overlap_geom = arcpy.CopyFeatures_management(orig_tidytrans, arcpy.Geometry())
+# for line in overlap_geom:
+#     for transect in arcpy.da.UpdateCursor(orig_tidytrans, ("SHAPE@", tID_fld)):
+#         right, left = transect.cut(line) # If a geometry is not cut, left will be empty (None)
+
 if not t_trans:
     arcpy.DeleteFeatures_management(orig_tidytrans)
     # arcpy.CopyFeatures_management(orig_tidytrans, extTrans_tidy_archive)
@@ -180,7 +185,7 @@ arcpy.env.workspace = home
 
 #%% Shoreline-transect intersect points
 arcpy.Intersect_analysis((shoreline, extendedTrans), intersect_shl2trans, output_type='POINT')
-shl2trans = 'ParkerRiver2014_SLpts2trans'
+# shl2trans = 'ParkerRiver2014_SLpts2trans'
 #FIXME: shljoin = JOIN closest feature in ShorelinePts to shl2trans
 # right click on intersect layer, and
 #fmap = 'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,SHL2trans_temp,sort_ID,-1,-1; ID "ID" true true false 4 Float 0 0 ,First,#,\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\Delmarva\Assateague\2014\Assateague2014.gdb\Assateague2014_SLpts,ID,-1,-1'

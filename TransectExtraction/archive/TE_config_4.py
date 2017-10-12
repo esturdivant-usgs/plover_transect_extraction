@@ -47,24 +47,23 @@ oMLW = MHW-MLW                      # MLW offset from MHW # Beach height adjustm
 SiteYear_strings['MTL'] = MTL = (MHW+MLW)/2
 
 ######## Set paths ################################################################
-topdir = r'\\Mac' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
-local_home = os.path.join(topdir, 'stor', 'Projects', 'TransectExtraction', '{}'.format(site+year))
+topdir = r'\\Mac\Home' if sys.platform == 'win32' else '/Users/esturdivant' # assumes win32 is the only platform that would use server address
+local_home = os.path.join(topdir, 'Documents', 'ArcGIS', 'TE', '{}'.format(site+year))
+local_home = os.path.join(topdir, 'ArcGIS', 'TE', '{}'.format(site+year))
 try:
     os.makedirs(local_home)
 except OSError:
     if not os.path.isdir(local_home):
         raise
 
-# volume = r'\\IGSAGIEGGS-CSGG' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
-# volume = r'\\Mac' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
-# site_dir = os.path.join(volume, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
-    # SiteYear_strings['region'], SiteYear_strings['site'])
-site_dir = local_home
+volume = r'\\IGSAGIEGGS-CSGG' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
+site_dir = os.path.join(volume, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
+    SiteYear_strings['region'], SiteYear_strings['site'])
 
 home = os.path.join(local_home, '{site}{year}.gdb'.format(**SiteYear_strings))
 if sys.platform == 'win32':
     arcpy.env.workspace=home
-scratch_dir = os.path.join(local_home, 'scratch') # out_dir = os.path.join(local_home, 'scratch')
+scratch_dir = os.path.join(local_home, 'scratch')
 final_dir = os.path.join(site_dir, 'Extracted_Data')
 code_dir = os.path.join(local_home, 'Extraction_code')
 
@@ -89,7 +88,7 @@ if sys.platform == 'win32':
 
 ########### Default inputs ##########################
 orig_trans = '{site}_LTorig'.format(**SiteYear_strings)
-orig_extTrans = '{site}{year}_extTrans'.format(**SiteYear_strings)
+orig_extTrans = '{site}_extTrans'.format(**SiteYear_strings)
 orig_tidytrans = '{site}_tidyTrans'.format(**SiteYear_strings)
 
 extendedTrans = "{site}{year}_extTrans".format(**SiteYear_strings) # Created MANUALLY: see TransExtv4Notes.txt
@@ -102,11 +101,6 @@ armorLines = '{site}{year}_armor'.format(**SiteYear_strings)
 barrierBoundary = '{site}{year}_bndpoly_2sl'.format(**SiteYear_strings)   # Barrier Boundary polygon; create with TE_createBoundaryPolygon.py
 elevGrid = '{site}{year}_DEM'.format(**SiteYear_strings)				# Elevation
 elevGrid_5m = elevGrid+'_5m'				# Elevation
-
-############# Intermediate products ####################
-bndMTL = '{site}{year}_bndpoly_mtl'.format(**SiteYear_strings)
-bndMHW = '{site}{year}_bndpoly_mhw'.format(**SiteYear_strings)
-bndpoly = '{site}{year}_bndpoly'.format(**SiteYear_strings)
 
 ############## Outputs ###############################
 dh2trans = '{site}{year}_DH2trans'.format(**SiteYear_strings)							# DHigh within 10m
@@ -138,17 +132,11 @@ beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 transPts_presort = '{site}{year}_5mPts_unsorted'.format(**SiteYear_strings)
 
-rst_transID = "{site}_rstTransID".format(**SiteYear_strings)
-rst_transIDpath = os.path.join(arcpy.env.workspace, rst_transID)
-
+rst_transIDpath = "{site}_rstTransID".format(**SiteYear_strings)
 rst_transPopulated = "{site}{year}_rstTrans_populated".format(**SiteYear_strings)
 
 rst_transgrid_path = os.path.join(scratch_dir, "{code}_trans".format(**SiteYear_strings))
 rst_bwgrid_path = os.path.join(scratch_dir, "{code}".format(**SiteYear_strings))
-rst_bwgrid_path = os.path.join(arcpy.env.workspace, "{code}".format(**SiteYear_strings))
-bw_rst="{code}_ubw".format(**SiteYear_strings)
-
-
 
 ########### Field names ##########################
 # transect_fields_part0 = ['sort_ID','TRANSORDER', 'TRANSECTD', 'LRR', 'LR2', 'LSE', 'LCI90']

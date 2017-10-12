@@ -11,8 +11,8 @@ if sys.platform == 'win32':
     sys.path.append(script_path) # path to TransectExtraction module
     import arcpy
 if sys.platform == 'darwin':
-    script_path = '/Users/esturdivant/GitHub/plover_transect_extraction/TransectExtraction'
-    sys.path.append(script_path)
+    script_path = '~/GitHub/plover_transect_extraction/TransectExtraction'
+    sys.path.append(os.path.expanduser(script_path))
 from TE_siteyear_configmap import *
 
 ############ Inputs #########################
@@ -39,26 +39,27 @@ else:
     maxDH = 2.5
 
 ######## Set paths ################################################################
-# inputs
-csgg = r'\\IGSAGIEGGS-CSGG' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
-site_dir = os.path.join(csgg, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
-    SiteYear_strings['region'], SiteYear_strings['site'])
-home_gdb = '{site}{year}.gdb'.format(**SiteYear_strings)
-home = os.path.join(site_dir, SiteYear_strings['year'], home_gdb)
+SYgdb = '{site}{year}.gdb'.format(**SiteYear_strings) # home_gdb
+server = r'\\IGSAGIEGGS-CSGG' if sys.platform == 'win32' else '/Volumes' # assumes win32 is the only platform that would use server address
 
-trans_dir = os.path.join(site_dir, 'All_Years', SiteYear_strings['site']+'_transects.gdb')
+# server - input and output locations
+server_dir = os.path.join(server, 'Thieler_Group', 'Commons_DeepDive', 'DeepDive',
+    SiteYear_strings['region'], SiteYear_strings['site'])
+save_gdb = os.path.join(server_dir, SiteYear_strings['year'], SYgdb) # home
+trans_dir = os.path.join(server_dir, 'All_Years', SiteYear_strings['site']+'_transects.gdb')
+out_dir = os.path.join(server_dir, SiteYear_strings['year'], 'Extracted_Data')
 
 # working
-code_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extraction_code')
-working_dir = os.path.join(site_dir, SiteYear_strings['year'], 'working')
-temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'
+local_dir = os.path.join(os.path.expanduser('~','DATA','Working','DeepDive',SiteYear_strings['site'])
+working_gdb = os.path.join(local_dir, SYgdb)
+temp_gdb = os.path.join(local_dir, '{site}{year}_temp'.format(**SiteYear_strings))
+working_dir = os.path.join(local_dir, '{site}{year}'.format(**SiteYear_strings))
+code_dir = os.path.join(working_dir, 'Extraction_code')
 
-# outputs
-out_dir = os.path.join(site_dir, SiteYear_strings['year'], 'Extracted_Data')
+SiteYear_strings['home'] = save_gdb
+SiteYear_strings['site_dir'] = server_dir
 
 ######## Set values ################################################################
-SiteYear_strings['home'] = home
-SiteYear_strings['site_dir'] = site_dir
 MHW = SiteYear_strings['MHW']
 MLW = SiteYear_strings['MLW']
 dMHW = -MHW                         # Beach height adjustment
@@ -73,7 +74,7 @@ else:
 if sys.platform == 'win32':
     arcpy.env.overwriteOutput = True 						# Overwrite output?
     arcpy.CheckOutExtension("Spatial") 						# Checkout Spatial Analysis extension
-    arcpy.env.workspace = home
+    arcpy.env.workspace = save_gdb
     # Spatial references
     nad83 = arcpy.SpatialReference(4269)
     utmSR = arcpy.SpatialReference(proj_code)
@@ -118,7 +119,7 @@ transPts_fill= '{site}{year}_transPts_fill'.format(**SiteYear_strings)
 transPts_shp = '{site}{year}_transPts_shp'.format(**SiteYear_strings)
 transPts_bw = '{site}{year}_transPts_beachWidth_fill'.format(**SiteYear_strings)
 pts_elevslope = 'transPts_ZmhwSlp'
-out_stats = os.path.join(home,"avgZ_byTransect")
+out_stats = os.path.join(save_gdb,"avgZ_byTransect")
 beachwidth_rst = "{site}{year}_beachWidth".format(**SiteYear_strings)
 
 transPts_presort = 'transPts_presort'

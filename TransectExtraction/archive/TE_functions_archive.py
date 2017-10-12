@@ -309,6 +309,154 @@ def CreatePointsFromCP(baseName,CPpts,utmSR):
     arcpy.CopyFeatures_management(CPpts+'_lyr',CPpts)
     return CPpts
 
+
+def add_shorelinePts2Trans_v1(in_trans, in_pts, shoreline, prefix='SL', tID_fld='sort_ID', snaptoline_on=False, proximity=25, verbose=True):
+    # 8 minutes
+    start = time.clock()
+    fmapdict = find_similar_fields(prefix, in_pts, ['slope'])
+    slp_fld = fmapdict['slope']['src']
+    df = pd.DataFrame(columns=[prefix+'_x', prefix+'_y', 'Bslope'], dtype='float64')
+    df.index.name = tID_fld
+    # ~ 50 transects per minute
+    if verbose:
+        print('Looping through transects to find nearest point within {} meters...'.format(proximity))
+    for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
+        transect = trow[0]
+        tID = trow[1]
+        for srow in arcpy.da.SearchCursor(shoreline, ("SHAPE@")):
+            sline = srow[0] # polyline geometry
+            # Set SL_x and SL_y to point where transect intersects shoreline
+            if not transect.disjoint(sline):
+                slxpt = transect.intersect(sline, 1)[0]
+                df.loc[tID, [prefix+'_x', prefix+'_y', 'Bslope']] = [slxpt.X, slxpt.Y, np.nan]
+        # Get the closest shoreline point for the slope value
+        shortest_dist = float(proximity)
+        # found = False
+        for prow in arcpy.da.SearchCursor(in_pts, [slp_fld, "SHAPE@"]):
+            pt_distance = transect.distanceTo(prow[1])
+            if pt_distance < shortest_dist:
+                shortest_dist = pt_distance
+                # found=True
+                # print('slope: {}'.format(prow[0]))
+                df.loc[tID, ['Bslope']] = [prow[0]] # overwrite Bslope if pt is closer
+        if verbose:
+            if tID % 100 < 1:
+                print('Duration at transect {}: {}'.format(tID, print_duration(start, True)))
+    print_duration(start)
+    return(df)
+
+
+def calc_BeachWidth_fill_v1(in_trans, trans_df, maxDH, tID_fld='sort_ID', MHW='', fill=-99999):
+    # v3 (v1: arcpy, v2: pandas, v3: pandas with snapToLine() from arcpy)
+    # To find dlow proxy, uses code written by Ben in Matlab and converted to pandas by Emily
+    # Adds snapToLine() polyline geometry method from arcpy
+
+    # replace nan's with fill for cursor operations; may actually be necessary to work with nans... performing calculations with fill results in inaccuracies
+    if trans_df.isnull().values.any():
+        nan_input = True
+        trans_df.fillna(fill, inplace=True)
+    else:
+        nan_input = False
+    # add (or recalculate) elevation fields adjusted to MHW
+    trans_df = adjust2mhw(trans_df, MHW, ['DH_z', 'DL_z', 'Arm_z'], fill)
+    # initialize df
+    bw_df = pd.DataFrame(fill, index=trans_df.index, columns= ['DistDL', 'DistDH', 'DistArm', 'uBW', 'uBH', 'ub_feat'], dtype='f8')
+    # initialize series
+    sl2dl = pd.Series(fill, index=trans_df.index, dtype='f8', name='DistDL')
+    sl2dh = pd.Series(fill, index=trans_df.index, dtype='f8', name='DistDH')
+    sl2arm = pd.Series(fill, index=trans_df.index, dtype='f8', name='DistArm') # dtype will 'object'
+    uBW = pd.Series(fill, index=trans_df.index, dtype='f8', name='uBW')
+    uBH = pd.Series(fill, index=trans_df.index, dtype='f8', name='uBH')
+    feat = pd.Series(fill, index=trans_df.index, dtype='object', name='ub_feat') # dtype will 'object'
+    for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
+        transect = row[0]
+        tID = row[1]
+        tran = trans_df.ix[tID]
+        # if not np.isnan(tran.DL_x): # RuntimeError: Point: Input value is not numeric
+        if int(tran.DL_x) != int(fill):
+            ptDL = transect.snapToLine(arcpy.Point(tran['DL_x'], tran['DL_y']))
+            sl2dl[tID] = np.hypot(tran['SL_x']- ptDL[0].X, tran['SL_y'] - ptDL[0].Y)
+        # if not np.isnan(tran.DH_x):
+        if int(tran.DH_x) != int(fill):
+            ptDH = transect.snapToLine(arcpy.Point(tran['DH_x'], tran['DH_y']))
+            sl2dh[tID] = np.hypot(tran['SL_x'] - ptDH[0].X, tran['SL_y'] - ptDH[0].Y)
+        # if not np.isnan(tran.Arm_x):
+        if int(tran.Arm_x) != int(fill):
+            ptArm = transect.snapToLine(arcpy.Point(tran['Arm_x'], tran['Arm_y']))
+            sl2arm[tID] = np.hypot(tran['SL_x'] - ptArm[0].X, tran['SL_y'] - ptArm[0].Y)
+        # if not np.isnan(tran.DL_x):
+        if int(tran.DL_x) != int(fill):
+            uBW[tID] = sl2dl[tID]
+            uBH[tID] = tran['DL_zmhw']
+            feat[tID] = 'DL'
+        # elif tran.DH_zmhw <= maxDH:
+        elif int(tran.DH_x) != int(fill) and tran.DH_zmhw <= maxDH:
+            uBW[tID] = sl2dh[tID]
+            uBH[tID] = tran['DH_zmhw']
+            feat[tID] = 'DH'
+        # elif not np.isnan(tran.Arm_x):
+        elif int(tran.Arm_x) != int(fill):
+            uBW[tID] = sl2arm[tID]
+            uBH[tID] = tran['Arm_zmhw']
+            feat[tID] = 'Arm'
+        else: # If there is no DL equivalent, BW and BH = null
+            # uBW[tID] = uBH[tID] = np.nan
+            continue
+    # Add new uBW and uBH fields to trans_df
+    bw_df = pd.concat([sl2dl, sl2dh, sl2arm, uBW, uBH, feat], axis=1)
+    # pts_df = (pts_df.drop(pts_df.axes[1].intersection(bw_df.axes[1]), axis=1).join(bw_df, on=tID_fld, how='outer'))
+    trans_df = join_columns(trans_df, bw_df)
+    if nan_input: # restore nan values
+        trans_df.replace(fill, np.nan, inplace=True)
+    return(trans_df)
+
+def calc_BeachWidth(in_trans, trans_df, maxDH, tID_fld='sort_ID', MHW=''):
+    # v3 (v1: arcpy, v2: pandas, v3: pandas with snapToLine() from arcpy)
+    # To find dlow proxy, uses code written by Ben in Matlab and converted to pandas by Emily
+    # Adds snapToLine() polyline geometry method from arcpy
+    # add (or recalculate) elevation fields adjusted to MHW
+    trans_df = adjust2mhw(trans_df, MHW)
+    # initialize series
+    sl2dl = pd.Series(np.nan, index=trans_df.index, name='DistDL')
+    sl2dh = pd.Series(np.nan, index=trans_df.index, name='DistDH')
+    sl2arm = pd.Series(np.nan, index=trans_df.index, name='DistArm') # dtype will 'object'
+    uBW = pd.Series(np.nan, index=trans_df.index, name='uBW')
+    uBH = pd.Series(np.nan, index=trans_df.index, name='uBH')
+    feat = pd.Series(np.nan, index=trans_df.index, name='ub_feat') # dtype will 'object'
+    for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
+        transect = row[0]
+        tID = row[1]
+        tran = trans_df.ix[tID]
+        if not np.isnan(tran.DL_x): # RuntimeError: Point: Input value is not numeric
+            ptDL = transect.snapToLine(arcpy.Point(tran['DL_x'], tran['DL_y']))
+            sl2dl[tID] = np.hypot(tran['SL_x']- ptDL[0].X, tran['SL_y'] - ptDL[0].Y)
+        if not np.isnan(tran.DH_x):
+            ptDH = transect.snapToLine(arcpy.Point(tran['DH_x'], tran['DH_y']))
+            sl2dh[tID] = np.hypot(tran['SL_x'] - ptDH[0].X, tran['SL_y'] - ptDH[0].Y)
+        if not np.isnan(tran.Arm_x):
+            ptArm = transect.snapToLine(arcpy.Point(tran['Arm_x'], tran['Arm_y']))
+            sl2arm[tID] = np.hypot(tran['SL_x'] - ptArm[0].X, tran['SL_y'] - ptArm[0].Y)
+        if not np.isnan(tran.DL_x):
+            uBW[tID] = sl2dl[tID]
+            uBH[tID] = tran['DL_zmhw']
+            feat[tID] = 'DL'
+        elif tran.DH_zmhw <= maxDH:
+            uBW[tID] = sl2dh[tID]
+            uBH[tID] = tran['DH_zmhw']
+            feat[tID] = 'DH'
+        elif not np.isnan(tran.Arm_x):
+            uBW[tID] = sl2arm[tID]
+            uBH[tID] = tran['Arm_zmhw']
+            feat[tID] = 'Arm'
+        else: # If there is no DL equivalent, BW and BH = null
+            # uBW[tID] = uBH[tID] = np.nan
+            continue
+    # Add new uBW and uBH fields to trans_df
+    bw_df = pd.concat([sl2dl, sl2dh, sl2arm, uBW, uBH, feat], axis=1)
+    # pts_df = (pts_df.drop(pts_df.axes[1].intersection(bw_df.axes[1]), axis=1).join(bw_df, on=tID_fld, how='outer'))
+    trans_df = join_columns(trans_df, bw_df)
+    return(trans_df)
+
 def CalcBeachWidth_MHW(d_x,d_y,sl_x,sl_y):
     # Calculate beach width based on dune and shoreline coordinates (meters)
     try:
@@ -627,6 +775,23 @@ def Dist2Inlet(transects, in_line, IDfield='sort_ID', xpts='xpts_temp', two_dire
     print "Dist2Inlet() completed in %dh:%dm:%fs" % (hours, minutes, seconds)
     return(transects)
 
+def measure_Dist2Inlet(shoreline, in_trans, tID_fld='sort_ID'):
+    start = time.clock()
+    df = pd.DataFrame(columns=[tID_fld, 'Dist2Inlet'])
+    for row in arcpy.da.SearchCursor(shoreline, ("SHAPE@")):
+        line = row[0]
+        for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
+            transect = trow[0]
+            tID = trow[1]
+            if not line.disjoint(transect): #line and transect overlap
+                shoreseg = line.cut(transect)
+                # check that shoreseg touches inlet line, only use segs that do.
+                mindist = min(shoreseg[0].length, shoreseg[1].length)
+                df = df.append({tID_fld:tID, 'Dist2Inlet':mindist}, ignore_index=True)
+    df.index = df[tID_fld]
+    df.drop(tID_fld, axis=1, inplace=True)
+    print_duration(start)
+    return(df)
 
 def SplitTransectsToPoints(in_trans, out_pts, barrierBoundary, temp_gdb=r'\\Mac\Home\Documents\ArcGIS\temp.gdb'):
     # Split transects into segments

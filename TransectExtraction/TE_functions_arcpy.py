@@ -6,7 +6,7 @@
 import arcpy
 import time
 import os
-import pythonaddins
+# import pythonaddins
 import collections
 import pandas as pd
 import numpy as np
@@ -16,14 +16,15 @@ if sys.platform == 'win32':
     script_path = r"\\Mac\Home\GitHub\plover_transect_extraction\TransectExtraction"
     sys.path.append(script_path) # path to TransectExtraction module
     import arcpy
-    import pythonaddins
-    from TE_functions_arcpy import *
 if sys.platform == 'darwin':
     script_path = '/Users/esturdivant/GitHub/plover_transect_extraction/TransectExtraction'
     sys.path.append(script_path)
 from TE_functions import *
 
+
+"""
 # General use functions
+"""
 def SetInputFCname(workingdir, varname, inFCname, system_ext=True):
     if arcpy.Exists(inFCname):
         inFCname = inFCname
@@ -39,7 +40,7 @@ def SetInputFCname(workingdir, varname, inFCname, system_ext=True):
         if FCname:
             inFCname = os.path.basename(FCname)
         else:
-            print 'No data selected for {}.'.format(inFCname)
+            print('No data selected for {}.'.format(inFCname))
             inFCname = False
             if system_ext:
                 raise SystemExit
@@ -50,8 +51,8 @@ def unique_values(table, field):
     data = arcpy.da.TableToNumPyArray(table, [field])
     return numpy.unique(data[field])
 
-# Check for anomalous values in FC:
 def CheckValues(inFeatureClass,fieldName,expectedRange):
+    # Check for anomalous values in FC
     lowrows = list()
     highrows = list()
     expectedRange.sort() # make sure pair is [low,high]
@@ -98,6 +99,7 @@ def fieldExists(in_fc, fieldname):
 
 def CopyAndWipeFC(in_fc, out_fc, preserveflds=[]):
     # Make copy of transects and manually fill the gaps. Then select all the new transect and run the next piece of code.
+    out_fc = os.path.join(arcpy.env.scratchGDB, out_fc)
     arcpy.CopyFeatures_management(in_fc, out_fc)
     # Replace values of all new transects
     fldsToWipe = [f.name for f in arcpy.ListFields(out_fc)
@@ -222,7 +224,7 @@ def AddXYAttributes(fc, newfc, prefix, proj_code=26918):
         arcpy.MultipartToSinglepart_management(fc,newfc) # failed for SHL2trans_temp: says 'Cannot open...'
     except arcpy.ExecuteError:
         print(arcpy.GetMessages(2))
-        print "Attempting to continue"
+        print("Attempting to continue")
         #RemoveLayerFromMXD(fc)
         arcpy.FeatureClassToFeatureClass_conversion(fc,arcpy.env.workspace,newfc)
         pass
@@ -252,6 +254,17 @@ def ReplaceValueInFC(fc, oldvalue=-99999, newvalue=None, fields="*"):
                     #     #print(row)
     return fc
 
+def CopyFCandReplaceValues(fc, oldvalue=-99999, newvalue=None, fields="*", out_fc='', out_dir=''):
+    # Replace oldvalue with newvalue in fields in fc
+    # First check field types
+    if len(out_fc) > 0:
+        if len(out_dir) < 1:
+            out_dir = arcpy.env.workspace
+        arcpy.FeatureClassToFeatureClass_conversion(fc, out_dir, out_fc)
+        fc = out_fc
+    fc = ReplaceValueInFC(fc, oldvalue, newvalue, fields)
+    return fc
+
 def ReProject(fc,newfc,proj_code=26918):
     if not arcpy.Describe(fc).spatialReference.factoryCode == proj_code: # NAD83 UTM18N
         arcpy.Project_management(fc,newfc,arcpy.SpatialReference(proj_code))
@@ -271,6 +284,9 @@ def DeleteFeaturesByValue(fc,fields=[], deletevalue=-99999):
                     cursor.deleteRow()
     return fc
 
+"""
+Pre-processing
+"""
 # Part 1 functions
 def ProcessDEM(elevGrid, elevGrid_5m, utmSR):
     # If cell size is not 1x1m in NAD83 UTM Zone__, Project it to such.
@@ -300,11 +316,11 @@ def ExtendLine(fc, new_fc, distance, proj_code=26918):
             yield total
     # Project transects to UTM
     if not arcpy.Describe(fc).spatialReference.factoryCode == proj_code:
-        print 'Projecting {} to UTM'.format(fc)
+        print('Projecting {} to UTM'.format(fc))
         arcpy.Project_management(fc, fc+'utm_temp', arcpy.SpatialReference(proj_code))  # project to PCS
         arcpy.FeatureClassToFeatureClass_conversion(fc+'utm_temp', arcpy.env.workspace, new_fc)
     else:
-        print '{} is already projected in UTM.'.format(fc)
+        print('{} is already projected in UTM.'.format(fc))
         arcpy.FeatureClassToFeatureClass_conversion(fc, arcpy.env.workspace, new_fc)
     #OID is needed to determine how to break up flat list of data by feature.
     coordinates = [[row[0], row[1]] for row in
@@ -328,7 +344,7 @@ def ExtendLine(fc, new_fc, distance, proj_code=26918):
                 cursor.updateRow(row) #FIXME: If the FC was projected as part of the function, returns RuntimeError: "The spatial index grid size is invalid."
     return new_fc
 
-def PrepTransects_part2(trans_presort, LTextended, barrierBoundary='', trans_sort_1='trans_sort_temp', sort_corner="LR"):
+def PrepTransects_part2(trans_presort, LTextended, barrierBoundary=''):
     # 2. Remove orig transects from manually created transects # Delete any NAT transects in the new transects layer
     arcpy.SelectLayerByLocation_management(trans_presort, "ARE_IDENTICAL_TO",  # or "SHARE_A_LINE_SEGMENT_WITH"
                                            LTextended)
@@ -339,8 +355,6 @@ def PrepTransects_part2(trans_presort, LTextended, barrierBoundary='', trans_sor
     if len(barrierBoundary)>0:
         arcpy.SelectLayerByLocation_management(LTextended, "INTERSECT", barrierBoundary)
     arcpy.Append_management(LTextended, trans_presort)
-    # trans_sort_1, count1 = SpatialSort(trans_presort, trans_sort_1, sort_corner,
-    #                                    reverse_order=False, sortfield="sort_ID")
     return(trans_presort)
 
 def SpatialSort(in_fc, out_fc, sort_corner='LL', reverse_order=False, startcount=0, sortfield='sort_ID'):
@@ -369,7 +383,7 @@ def SortTransectsFromSortLines(in_fc, out_fc, sort_lines=[], sortfield='sort_ID'
     except:
         pass
     if not len(sort_lines):
-        base_fc, ct = SortTransectsByFeature(in_fc, 0, sort_lines, [1, sort_corner])
+        base_fc, ct = SortTransectsByFeature(in_fc, 0, sort_lines, [1, sort_corner], sortfield)
     else:
         sort_lines_arr = arcpy.da.FeatureClassToNumPyArray(sort_lines, ['sort', 'sort_corn'])
         base_fc, ct = SortTransectsByFeature(in_fc, 0, sort_lines, sort_lines_arr[0])
@@ -380,8 +394,9 @@ def SortTransectsFromSortLines(in_fc, out_fc, sort_lines=[], sortfield='sort_ID'
     SetStartValue(base_fc, out_fc, sortfield, start=1)
     return(out_fc)
 
-def SortTransectsByFeature(in_fc, new_ct, sort_lines=[], sortrow=[0, 'LL']):
+def SortTransectsByFeature(in_fc, new_ct, sort_lines=[], sortrow=[0, 'LL'], sortfield='sort_ID'):
     out_fc = 'trans_sort{}_temp'.format(new_ct)
+    arcpy.Delete_management(os.path.join(arcpy.env.workspace, out_fc)) # delete if it already exists
     if len(sort_lines):
         arcpy.SelectLayerByAttribute_management(sort_lines, "NEW_SELECTION", "sort = {}".format(sortrow[0]))
         arcpy.SelectLayerByLocation_management(in_fc, overlap_type='INTERSECT', select_features=sort_lines)
@@ -424,6 +439,11 @@ def PreprocessTransects(site,old_transects=False,sort_corner='LL',sortfield='sor
 
 
 def CreateShoreBetweenInlets(shore_delineator,inletLines,out_line,shoreline_pts, proj_code=26918):
+    # initialize temp layer names
+    line_temp = os.path.join(arcpy.env.scratchGDB, 'line_temp')
+    shore_temp = os.path.join(arcpy.env.scratchGDB, 'shore_temp')
+    split_temp = os.path.join(arcpy.env.scratchGDB, 'split_temp')
+    join_temp = os.path.join(arcpy.env.scratchGDB, 'join_temp')
     # Ready layers for processing
     DeleteExtraFields(inletLines)
     DeleteExtraFields(shore_delineator)
@@ -432,19 +452,19 @@ def CreateShoreBetweenInlets(shore_delineator,inletLines,out_line,shoreline_pts,
     typeFC = arcpy.Describe(shore_delineator).shapeType
     if typeFC == "Point" or typeFC =='Multipoint':
         # Create shoreline from shoreline points
-        arcpy.PointsToLine_management(shore_delineator, 'line_temp')
-        shore_delineator = 'shore_temp'
+        arcpy.PointsToLine_management(shore_delineator, line_temp)
+        shore_delineator = shore_temp
         # Merge and then extend shoreline to inlet lines
-        arcpy.Merge_management(['line_temp',inletLines],shore_delineator)
+        arcpy.Merge_management([line_temp,inletLines],shore_delineator)
         arcpy.ExtendLine_edit(shore_delineator,'500 Meters')
     # Eliminate extra lines, e.g. bayside, based on presence of SHLpts
-    arcpy.FeatureToLine_management([shore_delineator, inletLines], 'split_temp')
-    arcpy.SelectLayerByLocation_management("split_temp","INTERSECT", shoreline_pts,'1 METERS')
-    # count intersecting inlet lines
-    arcpy.SpatialJoin_analysis('split_temp',inletLines,"join_temp","JOIN_ONE_TO_ONE")
-    #arcpy.SelectLayerByAttribute_management("join_temp", "REMOVE_FROM_SELECTION", '"FID_{}" > -1'.format(inletLines)) # invalid SQL expression
+    arcpy.FeatureToLine_management([shore_delineator, inletLines], split_temp)
+    arcpy.SelectLayerByLocation_management(split_temp,"INTERSECT", shoreline_pts,'1 METERS')
+    # count intersecting inlet lines - FIXME: no longer needed, see measure_Dist2Inlet()
+    # arcpy.SpatialJoin_analysis(split_temp,inletLines, join_temp, "JOIN_ONE_TO_ONE")
+    #arcpy.SelectLayerByAttribute_management(join_temp, "REMOVE_FROM_SELECTION", '"FID_{}" > -1'.format(inletLines)) # invalid SQL expression
     print('CHECK THIS PROCESS. Added Dissolve operation to CreateShore... and so far it has not been tested.')
-    arcpy.Dissolve_management("join_temp", out_line, [["FID_{}".format(shore_delineator)]], [['Join_Count','SUM']])
+    arcpy.Dissolve_management(join_temp, out_line, [["FID_{}".format(shore_delineator)]], [['Join_Count','SUM']])
     #ReplaceFields(shoreline_pts,{'ORIG_FID':'OID@'},'SHORT')
     #ReplaceFields(out_line,{'ORIG_FID':'OID@'},'SHORT')
     return out_line
@@ -452,8 +472,8 @@ def CreateShoreBetweenInlets(shore_delineator,inletLines,out_line,shoreline_pts,
 def RasterToLandPerimeter(in_raster, out_polygon, threshold, agg_dist='30 METERS', min_area='300 SquareMeters', min_hole_sz='300 SquareMeters', manualadditions=None):
     """ Raster to Polygon: DEM => Reclass => MHW line """
     home = arcpy.env.workspace
-    r2p = os.path.join(home, out_polygon+'_r2p_temp')
-    r2p_union = os.path.join(home, out_polygon+'_r2p_union_temp')
+    r2p = os.path.join(arcpy.env.scratchGDB, out_polygon+'_r2p_temp')
+    r2p_union = os.path.join(arcpy.env.scratchGDB, out_polygon+'_r2p_union_temp')
 
     # Reclassify the DEM: 1 = land above threshold; the rest is nodata
     rastertemp = arcpy.sa.Con(arcpy.sa.Raster(in_raster)>threshold, 1, None)  # temporary layer classified from threshold
@@ -469,9 +489,9 @@ def RasterToLandPerimeter(in_raster, out_polygon, threshold, agg_dist='30 METERS
 def CombineShorelinePolygons(bndMTL, bndMHW, inletLines, ShorelinePts, bndpoly):
     # Use MTL and MHW contour polygons to create full barrier island shoreline polygon; Shoreline at MHW on oceanside and MTL on bayside
     # Inlet lines must intersect the MHW polygon
-    union = 'union_temp'
-    split_temp = 'split_temp'
-    union_2 = 'union_2_temp'
+    union = os.path.join(arcpy.env.scratchGDB, 'union_temp')
+    split_temp = os.path.join(arcpy.env.scratchGDB, 'split_temp')
+    union_2 = os.path.join(arcpy.env.scratchGDB, 'union_2_temp')
 
     arcpy.Union_analysis([bndMTL, bndMHW], union)
 
@@ -486,7 +506,7 @@ def CombineShorelinePolygons(bndMTL, bndMHW, inletLines, ShorelinePts, bndpoly):
     # Union didn't work when I tried it manually. Append worked, after copying bndMHW to bndpoly
     arcpy.Erase_analysis(union, split_temp, union_2) # Erase from union layer the selected shoreline area in split
     arcpy.Dissolve_management(union_2, bndpoly, multi_part='SINGLE_PART') # Dissolve all features in union_2 to single part polygons
-    print 'Select extra features for deletion\nRecommended technique: select the polygon/s to keep and then Switch Selection\n'
+    print('Select extra features for deletion\nRecommended technique: select the polygon/s to keep and then Switch Selection\n')
     return bndpoly
 
 def DEMtoFullShorelinePoly(elevGrid, prefix, MTL, MHW, inletLines, ShorelinePts):
@@ -564,7 +584,7 @@ def JoinFields(targetfc, sourcefile, dest2src_fields, joinfields=['sort_ID']):
     elif len(joinfields)==2:
         arcpy.JoinField_management(targetfc, joinfields[0], sourcefile, joinfields[1], src_fnames)
     else:
-        print 'joinfield accepts either one or two values only.'
+        print('joinfield accepts either one or two values only.')
     # Rename new fields from src fields
     print('Renaming the joined fields to their new names...')
     for (dest, src) in dest2src_fields.items():
@@ -576,6 +596,9 @@ def JoinFields(targetfc, sourcefile, dest2src_fields, joinfields=['sort_ID']):
     #arcpy.Delete_management(os.path.join(arcpy.env.workspace,sourcefile))
     return targetfc
 
+"""
+#%% dune and shoreline points to transects
+"""
 def find_similar_fields(prefix, oldPts, fields=[]):
     fmapdict = {'lon': {'dest': prefix+'_Lon'},
                 'lat': {'dest': prefix+'_Lat'},
@@ -583,6 +606,7 @@ def find_similar_fields(prefix, oldPts, fields=[]):
                 'north': {'dest': prefix+'_y'},
                 '_z': {'dest': prefix+'_z'},
                 'slope': {'dest': 'slope'}}
+    # Reduce dict to only desired fields; Default looks for all 6
     if len(fields):
         fdict = {}
         for f in fields:
@@ -610,44 +634,51 @@ def find_similar_fields(prefix, oldPts, fields=[]):
                         if f.name.endswith('_sm'):
                             src = f.name
                 else:
-                    raise AttributeError("Field similar to {} was not found in {}.".format(src, oldPts))
-                    pass
+                    # raise AttributeError("Field similar to {} was not found in {}.".format(src, oldPts))
+                    print("Field similar to {} was not found in {}.".format(src, oldPts))
+                    # pass
         fdict[key]['src'] = src
     return(fdict)
 
-def geom_shore2trans(transect, tID, shoreline, in_pts, slp_fld, proximity=25):
-    # for input transect geometry, get slope at nearest shoreline point and XY at intersect
-    # 1 second per transect for ~2000 input points
-    slp = np.nan
-    slxpt = arcpy.Point(np.nan, np.nan)
-    for srow in arcpy.da.SearchCursor(shoreline, ("SHAPE@")):
-        sline = srow[0] # polyline geometry
-        # Set SL_x and SL_y to point where transect intersects shoreline
-        if not transect.disjoint(sline):
-            slxpt = transect.intersect(sline, 1)[0]
-    # Get the closest shoreline point for the slope value
-    shortest_dist = float(proximity)
-    # found = False
-    for prow in arcpy.da.SearchCursor(in_pts, [slp_fld, "SHAPE@"]):
-        pt_distance = transect.distanceTo(prow[1])
-        if pt_distance < shortest_dist:
-            shortest_dist = pt_distance
-            # found=True
-            # print('slope: {}'.format(prow[0]))
-            slp = prow[0]
-    return(tID, [slxpt.X, slxpt.Y, slp])
-
-def add_shorelinePts2Trans(in_trans, in_pts, shoreline, tID_fld='sort_ID', proximity=25, verbose=True):
+def add_dunePts2Trans(in_trans, in_pts, shoreline, tID_fld='sort_ID', proximity=25, verbose=True):
+    #FIXME: save previous cursor (or this one) to dict to reduce iterations https://gis.stackexchange.com/a/30235
     start = time.clock()
-    fmapdict = find_similar_fields(prefix, in_pts, ['slope'])
-    slp_fld = fmapdict['slope']['src']
-    df = pd.DataFrame(columns=['SL_x', 'SL_y', 'Bslope'], dtype='float64')
+    # Find fieldname of elevation (Z) field
+    fmapdict = find_similar_fields(prefix, in_pts, ['_z'])
+    z_fld = fmapdict['_z']['src']
+    # Make data frame with _x, _y, and _z
+    df = pd.DataFrame(columns=[prefix+'_x', prefix+'_y', prefix+'_z'], dtype='float64')
     df.index.name = tID_fld
     for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
         transect = trow[0]
         tID = trow[1]
+        #!! Get values (x, y, z) at nearest point within 25 m
+        newrow = geom_dune2trans(transect, tID, in_pts, z_fld, proximity)
+        df.loc[tID, [prefix+'_x', prefix+'_y', prefix+'_z']] = newrow
+        if verbose:
+            if tID % 100 < 1:
+                print('Duration at transect {}: {}'.format(tID, print_duration(start, True)))
+    print_duration(start)
+    return(df)
+
+def add_shorelinePts2Trans(in_trans, in_pts, shoreline, tID_fld='sort_ID', proximity=25, verbose=True):
+    #FIXME: save previous cursor (or this one) to dict to reduce iterations https://gis.stackexchange.com/a/30235
+    start = time.clock()
+    if verbose:
+        print("\nJoining shoreline points to transects:")
+    # Find fieldname of slope field
+    fmapdict = find_similar_fields('sl', in_pts, ['slope'])
+    slp_fld = fmapdict['slope']['src']
+    # Make dataframe with SL_x, SL_y, Bslope
+    df = pd.DataFrame(columns=['SL_x', 'SL_y', 'Bslope'], dtype='float64')
+    df.index.name = tID_fld
+    # Iterate through transects
+    for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
+        transect = trow[0]
+        tID = trow[1]
+        #!! Get values (slope at nearest SLpt and XY at intersect) for transect geometry
         newrow = geom_shore2trans(transect, tID, shoreline, in_pts, slp_fld, proximity)
-        df.loc[newrow[0], ['SL_x', 'SL_y', 'Bslope']] = newrow[1]
+        df.loc[tID, ['SL_x', 'SL_y', 'Bslope']] = newrow
         if verbose:
             if tID % 100 < 1:
                 print('Duration at transect {}: {}'.format(tID, print_duration(start, True)))
@@ -655,41 +686,48 @@ def add_shorelinePts2Trans(in_trans, in_pts, shoreline, tID_fld='sort_ID', proxi
     return(df)
 
 def geom_dune2trans(transect, tID, in_pts, z_fld, proximity=25):
+    #FIXME: save previous lookup (or this one) to dict to reduce iterations https://gis.stackexchange.com/a/30235
     z = x = y = np.nan
     shortest_dist = float(proximity)
     for prow in arcpy.da.SearchCursor(in_pts, [z_fld, "SHAPE@X", "SHAPE@Y"]):
         pt_distance = transect.distanceTo(arcpy.Point(prow[1], prow[2]))
         if pt_distance < shortest_dist:
             shortest_dist = pt_distance
+            # z, x, y = prow
             x = prow[1]
             y = prow[2]
             z = prow[0]
-    return(tID, [x, y, z])
+    return(x, y, z)
 
-def add_dunePts2Trans(in_trans, in_pts, shoreline, tID_fld='sort_ID', proximity=25, verbose=True):
-    start = time.clock()
-    fmapdict = find_similar_fields(prefix, in_pts, ['_z'])
-    z_fld = fmapdict['_z']['src']
-    df = pd.DataFrame(columns=[prefix+'_x', prefix+'_y', prefix+'_z'], dtype='float64')
-    df.index.name = tID_fld
-    for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
-        transect = trow[0]
-        tID = trow[1]
-        newrow = geom_dune2trans(transect, tID, in_pts, z_fld, proximity)
-        df.loc[newrow[0], [prefix+'_x', prefix+'_y', prefix+'_z']] = newrow[1]
-        if verbose:
-            if tID % 100 < 1:
-                print('Duration at transect {}: {}'.format(tID, print_duration(start, True)))
-    print_duration(start)
-    return(df)
+def geom_shore2trans(transect, tID, shoreline, in_pts, slp_fld, proximity=25):
+    #SUMMARY: for input transect geometry, get slope at nearest shoreline point and XY at intersect
+    # 1. Set SL_x and SL_y to point where transect intersects shoreline
+    slxpt = arcpy.Point(np.nan, np.nan)
+    for srow in arcpy.da.SearchCursor(shoreline, ("SHAPE@")):
+        sline = srow[0] # polyline geometry
+        # Set SL_x and SL_y to point where transect intersects shoreline
+        if not transect.disjoint(sline):
+            slxpt = transect.intersect(sline, 1)[0]
+    # 2. Get the slope value at the closest shoreline point within proximity
+    slp = np.nan
+    shortest_dist = float(proximity)
+    for prow in arcpy.da.SearchCursor(in_pts, [slp_fld, "SHAPE@X", "SHAPE@Y"]):
+        pt_distance = transect.distanceTo(arcpy.Point(prow[1], prow[2])) #FIXME: ValueError: <geoprocessing describe geometry object object at 0x3248E400>
+        if pt_distance < shortest_dist:
+            shortest_dist = pt_distance
+            slp = prow[0]
+    # Return: X and Y at the intersect of trans and shoreline, slope at nearest shoreline point (within proximity distance)
+    return(slxpt.X, slxpt.Y, slp)
 
-def add_Pts2Trans(in_trans, dl_pts, dh_pts, sl_pts, shoreline, tID_fld='sort_ID', proximity=25, verbose=True):
+
+def add_Pts2Trans(in_trans, dlPts, dhPts, ShorelinePts, shoreline, tID_fld='sort_ID', proximity=25, verbose=True):
+    #FIXME: save cursors  to dicts to reduce iterations https://gis.stackexchange.com/a/30235
     # For each transect, get the XY and Z/slope of DL, DH, and SL points
     # Duration for ParkerRiver: 55 minutes
     start = time.clock()
-    fmapdict = find_similar_fields('DL', dl_pts, ['_z'])
+    fmapdict = find_similar_fields('DL', dlPts, ['_z'])
     dlZ_fld = fmapdict['_z']['src']
-    fmapdict = find_similar_fields('DH', dh_pts, ['_z'])
+    fmapdict = find_similar_fields('DH', dhPts, ['_z'])
     dhZ_fld = fmapdict['_z']['src']
     fmapdict = find_similar_fields('SL', sl_pts, ['slope'])
     slp_fld = fmapdict['slope']['src']
@@ -698,62 +736,114 @@ def add_Pts2Trans(in_trans, dl_pts, dh_pts, sl_pts, shoreline, tID_fld='sort_ID'
     for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
         transect = trow[0]
         tID = trow[1]
-        newrow = geom_dune2trans(transect, tID, dl_pts, dlZ_fld, proximity)
-        df.loc[newrow[0], ['DL_x', 'DL_y', 'DL_z']] = newrow[1]
-        newrow = geom_dune2trans(transect, tID, dh_pts, dhZ_fld, proximity)
-        df.loc[newrow[0], ['DH_x', 'DH_y', 'DH_z']] = newrow[1]
-        newrow = geom_shore2trans(transect, tID, shoreline, sl_pts, slp_fld, proximity)
-        df.loc[newrow[0], ['SL_x', 'SL_y', 'Bslope']] = newrow[1]
+        dlxyz = geom_dune2trans(transect, tID, dlPts, dlZ_fld, proximity)
+        df.loc[tID, ['DL_x', 'DL_y', 'DL_z']] = dlxyz
+        dhxyz = geom_dune2trans(transect, tID, dhPts, dhZ_fld, proximity)
+        df.loc[tID, ['DH_x', 'DH_y', 'DH_z']] = dhxyz
+        try:
+            slxys = geom_shore2trans(transect, tID, shoreline, sl_pts, slp_fld, proximity) #FIXME: ValueError: <geoprocessing describe geometry object object at 0x3248E400>
+            df.loc[tID, ['SL_x', 'SL_y', 'Bslope']] = slxys
+        except:
+            print('Error in geom_shore2trans() at tID: {}'.format(tID))
+            break
         if verbose:
             if tID % 100 < 1:
                 print('Duration at transect {}: {}'.format(tID, print_duration(start, True)))
     print_duration(start)
     return(df)
 
-def add_shorelinePts2Trans_v1(in_trans, in_pts, shoreline, prefix='SL', tID_fld='sort_ID', snaptoline_on=False, proximity=25, verbose=True):
-    # 8 minutes
+def add_Pts2Trans_dfs(in_trans, dlPts, dhPts, ShorelinePts, shoreline, tID_fld='sort_ID', proximity=25, verbose=True):
+    #FIXME: save cursors  to dicts to reduce iterations https://gis.stackexchange.com/a/30235
+    # For each transect, get the XY and Z/slope of DL, DH, and SL points
+    # Duration for ParkerRiver: 55 minutes
     start = time.clock()
-    fmapdict = find_similar_fields(prefix, in_pts, ['slope'])
-    slp_fld = fmapdict['slope']['src']
-    df = pd.DataFrame(columns=[prefix+'_x', prefix+'_y', 'Bslope'], dtype='float64')
+    fmapdict = find_similar_fields('DL', dlPts, ['_z'])
+    dlZ_fld = fmapdict['_z']['src']
+    dl_df = FCtoDF(dlPts, xy=True, dffields=[dlZ_fld], fid=True)
+    # fmapdict = find_similar_fields('DH', dhPts, ['_z'])
+    # dhZ_fld = fmapdict['_z']['src']
+    # dh_df = FCtoDF(dhPts, xy=True, dffields=[dhZ_fld], fid=True)
+    # fmapdict = find_similar_fields('SL', sl_pts, ['slope'])
+    # slp_fld = fmapdict['slope']['src']
+    # sl_df = FCtoDF(sl_pts, xy=True, dffields=[slp_fld], fid=True)
+    df = pd.DataFrame(columns=['DL_x', 'DL_y', 'DL_z', 'DH_x', 'DH_y', 'DH_z', 'SL_x', 'SL_y', 'Bslope'], dtype='float64')
     df.index.name = tID_fld
-    # ~ 50 transects per minute
-    if verbose:
-        print('Looping through transects to find nearest point within {} meters...'.format(proximity))
     for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
         transect = trow[0]
         tID = trow[1]
-        for srow in arcpy.da.SearchCursor(shoreline, ("SHAPE@")):
-            sline = srow[0] # polyline geometry
-            # Set SL_x and SL_y to point where transect intersects shoreline
-            if not transect.disjoint(sline):
-                slxpt = transect.intersect(sline, 1)[0]
-                df.loc[tID, [prefix+'_x', prefix+'_y', 'Bslope']] = [slxpt.X, slxpt.Y, np.nan]
-        # Get the closest shoreline point for the slope value
-        shortest_dist = float(proximity)
-        # found = False
-        for prow in arcpy.da.SearchCursor(in_pts, [slp_fld, "SHAPE@"]):
-            pt_distance = transect.distanceTo(prow[1])
-            if pt_distance < shortest_dist:
-                shortest_dist = pt_distance
-                # found=True
-                # print('slope: {}'.format(prow[0]))
-                df.loc[tID, ['Bslope']] = [prow[0]] # overwrite Bslope if pt is closer
+        dlxyz = geom_dune2trans(transect, tID, dlPts, dlZ_fld, proximity)
+        df.loc[tID, ['DL_x', 'DL_y', 'DL_z']] = dlxyz
+        dhxyz = geom_dune2trans(transect, tID, dhPts, dhZ_fld, proximity)
+        df.loc[tID, ['DH_x', 'DH_y', 'DH_z']] = dhxyz
+        try:
+            slxys = geom_shore2trans(transect, tID, shoreline, sl_pts, slp_fld, proximity) #FIXME: ValueError: <geoprocessing describe geometry object object at 0x3248E400>
+            df.loc[tID, ['SL_x', 'SL_y', 'Bslope']] = slxys
+        except:
+            print('Error in geom_shore2trans() at tID: {}'.format(tID))
+            break
         if verbose:
             if tID % 100 < 1:
                 print('Duration at transect {}: {}'.format(tID, print_duration(start, True)))
     print_duration(start)
     return(df)
 
-def find_ClosestPt2Trans(in_trans, in_pts, prefix, tID_fld='sort_ID', snaptoline_on=False, proximity=25, verbose=True):
-    # About 1 minutes per transect
+def find_ClosestPt2Trans_snap(in_trans, in_pts, trans_df, prefix, tID_fld='sort_ID', proximity=25, verbose=True, fill=-99999):
+    # About 1 minute per transect
     start = time.clock()
+    if verbose:
+        print("\nJoining {} points to transects:".format(prefix))
+    # Get fieldname for Z field
+    if verbose:
+        print('Getting name of Z field...')
+    if prefix == 'DH' or prefix == 'DL':
+        fmapdict = find_similar_fields(prefix, in_pts, fields=['_z'])
+    z_fld = fmapdict['_z']['src']
+    # Initialize dataframe
+    out_df = pd.DataFrame(np.nan, index=trans_df.index, columns=[tID_fld, prefix+'_x', prefix+'_y', prefix+'_z', prefix+'_snapX', prefix+'_snapY'], dtype='f8')
+    # Find nearest point
+    if verbose:
+        print('Looping through transects to find nearest point within {} meters...'.format(proximity))
+    for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@", tID_fld)):
+        # reset values
+        shortest_dist = float(proximity)
+        found = False
+        # retrieve transect geom, ID value
+        transect = row[0]
+        tID = row[1]
+        for prow in arcpy.da.SearchCursor(in_pts, ["SHAPE@X", "SHAPE@Y", z_fld, "OID@"]):
+            in_pt = arcpy.Point(X=prow[0], Y=prow[1], Z=prow[2], ID=prow[3])
+            if transect.distanceTo(in_pt) < shortest_dist:
+                shortest_dist = transect.distanceTo(in_pt)
+                pt = in_pt
+                found = True
+        if found:
+            snappt = transect.snapToLine(arcpy.Point(pt.X, pt.Y))
+            out_df.loc[tID, tID_fld] = tID
+            out_df.loc[tID, [prefix+'_snapX', prefix+'_snapY']] = [snappt[0].X, snappt[0].Y]
+            out_df.loc[tID, [prefix+'_x', prefix+'_y', prefix+'_z']] = [pt.X, pt.Y, pt.Z]
+        if verbose:
+            if tID % 100 < 1:
+                print('Duration at transect {}: {}'.format(tID, print_duration(start, True)))
+    # if out_df.index.name in out_df.columns:
+    #     out_df.drop(out_df.index.name, axis=1, inplace=True)
+    # if out_df[tID_fld].isnull().any():
+    #     out_df.index.name = tID_fld
+    #     out_df.drop(tID_fld, axis=1, inplace=True)
+    duration = print_duration(start)
+    return(out_df)
+
+def find_ClosestPt2Trans(in_trans, in_pts, prefix, tID_fld='sort_ID', proximity=25, verbose=True):
+    # About 1 minute per transect
+    start = time.clock()
+    # Get fieldname for Z field
     if verbose:
         print('Getting name of Z field...')
     fmapdict = find_similar_fields(prefix, in_pts)
     z_fld = fmapdict['_z']['src']
-    df = pd.DataFrame(columns=[tID_fld, prefix+'_x', prefix+'_y', prefix+'_z', prefix+'_dist2tran'], dtype='float64')
+    # Initialize dataframe
+    df = pd.DataFrame(columns=[tID_fld, prefix+'_x', prefix+'_y', prefix+'_z', prefix+'_dist2tran'], dtype='f8')
     df.index.name = tID_fld
+    # Find nearest point
     if verbose:
         print('Looping through transects to find nearest point within {} meters...'.format(proximity))
     for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@", tID_fld)):
@@ -781,21 +871,183 @@ def find_ClosestPt2Trans(in_trans, in_pts, prefix, tID_fld='sort_ID', snaptoline
     duration = print_duration(start)
     return(df)
 
-def measure_Dist2Inlet(shoreline, in_trans, tID_fld='sort_ID'):
-    df = pd.DataFrame(columns=[tID_fld, 'Dist2Inlet'])
-    for row in arcpy.da.SearchCursor(shoreline, ("SHAPE@")):
+def ShorelineToTrans_PD(extendedTransects, trans_df, inPtsDict, IDfield, proj_code, disttolerance=25, fill=-99999):
+    # shl2trans = 'SHL2trans'
+    # shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
+    shoreline = inPtsDict['shoreline']
+    ShorelinePts = inPtsDict['ShorelinePts']
+    shl2trans = os.path.join(arcpy.env.scratchGDB, 'SHL2trans_temp')
+    shljoin = os.path.join(arcpy.env.scratchGDB, 'shljoin_temp')
+    arcpy.Intersect_analysis((shoreline, extendedTransects), shl2trans, output_type='POINT')
+    #FIXME: shljoin = JOIN closest feature in ShorelinePts to shl2trans
+    #fmap = 'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,SHL2trans_temp,sort_ID,-1,-1; ID "ID" true true false 4 Float 0 0 ,First,#,\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\Delmarva\Assateague\2014\Assateague2014.gdb\Assateague2014_SLpts,ID,-1,-1'
+    # arcpy.SpatialJoin_analysis(shl2trans, os.path.join(home, ShorelinePts), 'join_temp','#','#', fmap, "CLOSEST", pt2trans_disttolerance) # create join_temp
+
+def ShoreIntersectToTrans_PD(trans_df, shljoin, IDfield, disttolerance=25, fill=-99999):
+    shljoin_df = FCtoDF(shljoin, xy=True, dffields=[IDfield, 'slope', 'Distance'], fid=True)
+    shljoin_df.rename(index=str, columns={'slope':'Bslope', 'SHAPE@X':'SL_x','SHAPE@Y':'SL_y', 'OID@':'slpts_id'}, inplace=True)
+    for i, row in shljoin_df.iterrows():
+        if row['Distance'] > disttolerance:
+            shljoin_df.ix[i, 'Bslope'] = fill
+    shljoin_df = shljoin_df.drop('Distance', axis=1)
+    shljoin_df.index.name = IDfield
+    trans_df = join_columns(trans_df, shljoin_df, id_fld=IDfield)
+    # JoinDFtoFC(shljoin_df, extendedTransects, IDfield)
+    # return extendedTransects
+    return(trans_df, shljoin_df)
+
+def ArmorLineToTrans_PD(in_trans, trans_df, armorLines, tID_fld, proj_code, elevGrid_5m):
+    #FIXME: How do I know which point will be encountered first? - don't want those in back to take the place of
+    arm2trans="arm2trans"
+    armorfields = ['Arm_x','Arm_y','Arm_z']
+    if not arcpy.Exists(armorLines) or not int(arcpy.GetCount_management(armorLines).getOutput(0)):
+        print('Armoring file either missing or empty so we will proceed without armoring data. If shorefront tampering is present at this site, cancel the operations to digitize.')
+        for f in armorfields:
+            trans_df[f] = np.nan
+    else:
+        # arcpy.GetCount_management(armorLines).getOutput(0)
+        # Create armor points with XY fields
+        arcpy.Intersect_analysis((armorLines, in_trans), arm2trans, output_type='POINT')
+        print('Getting elevation of beach armoring by extracting elevation values to arm2trans points.')
+        #FIXME: might need to convert multipart to singlepart before running Extract
+        arcpy.sa.ExtractMultiValuesToPoints(arm2trans, [[elevGrid_5m, 'z_tmp']]) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
+        arm2trans_df = FCtoDF(arm2trans, xy=True, dffields=[tID_fld, 'z_tmp'])
+        arm2trans_df.rename(index=str, columns={'z_tmp':'Arm_z', 'SHAPE@X':'Arm_x','SHAPE@Y':'Arm_y'}, inplace=True)
+        arm2trans_df.index.name = tID_fld
+        # Join
+        trans_df = join_columns(trans_df, arm2trans_df, tID_fld)
+    # JoinDFtoFC(arm2trans_df, in_trans, tID_fld)
+    # return(in_trans)
+    return(trans_df)
+
+"""
+Dist2Inlet
+"""
+
+def measure_Dist2Inlet(shoreline, in_trans, inletLines, tID_fld='sort_ID'):
+    start = time.clock()
+    utmSR = arcpy.Describe(in_trans).spatialReference
+    df = pd.DataFrame(columns=[tID_fld, 'Dist2Inlet']) # initialize dataframe
+    inlets = arcpy.CopyFeatures_management(inletLines, arcpy.Geometry()) # get inlet features as geometry objects; faster than cursor in depths of loop
+    for row in arcpy.da.SearchCursor(shoreline, ("SHAPE@")): # highest level loop through lines is faster than through transects
         line = row[0]
-        for trow in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
-            transect = trow[0]
-            tID = trow[1]
+        for [transect, tID] in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
+            # [transect, tID] = trow
             if not line.disjoint(transect): #line and transect overlap
-                shoreseg = line.cut(transect)
-                mindist = min(shoreseg[0].length, shoreseg[1].length)
+                # cut shoreline with transect
+                [rseg, lseg] = line.cut(transect)
+                # get length for only segs that touch inlets # use only first part in case of multipart feature
+                lenR = arcpy.Polyline(rseg.getPart(0), utmSR).length if not all(rseg.disjoint(i) for i in inlets) else np.nan
+                lenL = arcpy.Polyline(lseg.getPart(0), utmSR).length if not all(lseg.disjoint(i) for i in inlets) else np.nan
+                mindist = np.nanmin([lenR, lenL])
                 df = df.append({tID_fld:tID, 'Dist2Inlet':mindist}, ignore_index=True)
     df.index = df[tID_fld]
     df.drop(tID_fld, axis=1, inplace=True)
+    print_duration(start) # 25.8 seconds for Monomoy; converting shorelines to geom objects took longer time to complete.
     return(df)
 
+"""
+Beach width
+"""
+def calc_BeachWidth_fill(in_trans, trans_df, maxDH, tID_fld='sort_ID', MHW='', fill=-99999):
+    # v3 (v1: arcpy, v2: pandas, v3: pandas with snapToLine() from arcpy)
+    # To find dlow proxy, uses code written by Ben in Matlab and converted to pandas by Emily
+    # Adds snapToLine() polyline geometry method from arcpy
+
+    # replace nan's with fill for cursor operations;
+    #FIXME: may actually be necessary to work with nans... performing calculations with fill results in inaccuracies
+    if trans_df.isnull().values.any():
+        nan_input = True
+        trans_df.fillna(fill, inplace=True)
+    else:
+        nan_input = False
+    # add (or recalculate) elevation fields adjusted to MHW
+    trans_df = adjust2mhw(trans_df, MHW, ['DH_z', 'DL_z', 'Arm_z'], fill)
+    # initialize df
+    bw_df = pd.DataFrame(fill, index=trans_df.index, columns= ['DistDL', 'DistDH', 'DistArm', 'uBW', 'uBH', 'ub_feat'], dtype='f8')
+    # field ub_feat gets converted to object type when the value is set
+    dl2trans = pd.DataFrame(fill, index=trans_df.index, columns= [tID_fld, 'x', 'y'], dtype='f8')
+    dh2trans = pd.DataFrame(fill, index=trans_df.index, columns= [tID_fld, 'x', 'y'], dtype='f8')
+    arm2trans = pd.DataFrame(fill, index=trans_df.index, columns= [tID_fld, 'x', 'y'], dtype='f8')
+    for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
+        transect = row[0]
+        tID = row[1]
+        tran = trans_df.loc[tID]
+        try:
+            if int(tran['SL_x']) != int(fill):
+                if int(tran.DL_x) != int(fill):
+                    ptDL = transect.snapToLine(arcpy.Point(tran['DL_x'], tran['DL_y']))
+                    bw_df.loc[tID, 'DistDL'] = np.hypot(tran['SL_x']- ptDL[0].X, tran['SL_y'] - ptDL[0].Y)
+                    dl2trans.loc[tID, ['x', 'y']] = [ptDL[0].X, ptDL[0].Y]
+                if int(tran.DH_x) != int(fill):
+                    ptDH = transect.snapToLine(arcpy.Point(tran['DH_x'], tran['DH_y']))
+                    bw_df.loc[tID, 'DistDH'] = np.hypot(tran['SL_x'] - ptDH[0].X, tran['SL_y'] - ptDH[0].Y)
+                    dh2trans.loc[tID, ['x', 'y']] = [ptDH[0].X, ptDH[0].Y]
+                if int(tran.Arm_x) != int(fill):
+                    ptArm = transect.snapToLine(arcpy.Point(tran['Arm_x'], tran['Arm_y']))
+                    bw_df.loc[tID, 'DistArm'] = np.hypot(tran['SL_x'] - ptArm[0].X, tran['SL_y'] - ptArm[0].Y)
+                    arm2trans.loc[tID, ['x', 'y']] = [ptArm[0].X, ptArm[0].Y]
+                if int(tran.DL_x) != int(fill):
+                    bw_df.loc[tID, 'uBW'] = bw_df['DistDL'].loc[tID]
+                    bw_df.loc[tID, 'uBH'] = tran['DL_zmhw']
+                    bw_df.loc[tID, 'ub_feat'] = 'DL'
+                elif int(tran.DH_x) != int(fill) and tran.DH_zmhw <= maxDH:
+                    bw_df.loc[tID, 'uBW'] = bw_df['DistDH'].loc[tID]
+                    bw_df.loc[tID, 'uBH'] = tran['DH_zmhw']
+                    bw_df.loc[tID, 'ub_feat'] = 'DH'
+                elif int(tran.Arm_x) != int(fill):
+                    bw_df.loc[tID, 'uBW'] = bw_df['DistArm'].loc[tID]
+                    bw_df.loc[tID, 'uBH'] = tran['Arm_zmhw']
+                    bw_df.loc[tID, 'ub_feat'] = 'Arm'
+                else:
+                    continue
+            else:
+                continue
+        except TypeError:
+            print(tran.DL_x)
+            print(fill)
+            break
+    # Add new uBW and uBH fields to trans_df
+    # trans_df = join_columns(trans_df, bw_df, tID_fld)
+    trans_df = join_columns_id_check(trans_df, bw_df, tID_fld)
+    if nan_input: # restore nan values
+        trans_df.replace(fill, np.nan, inplace=True)
+    return(trans_df, dl2trans, dh2trans, arm2trans)
+
+"""
+Widths
+"""
+def calc_IslandWidths(in_trans, barrierBoundary, out_clipped='clip2island', tID_fld='sort_ID'):
+    home = arcpy.env.workspace
+    if not arcpy.Exists(out_clipped):
+        print('Clipping the transect to the barrier island boundaries...')
+        arcpy.Clip_analysis(os.path.join(home, in_trans), os.path.join(home, barrierBoundary), out_clipped) # ~30 seconds
+    # WidthPart - spot-checking verifies the results, but it should additionally include a check to ensure that the first transect part encountered intersects the shoreline
+    print('Getting the width along each transect of the oceanside land (WidthPart)...')
+    out_clipsingle = out_clipped + 'Single_temp'
+    if not arcpy.Exists(out_clipsingle):
+        arcpy.MultipartToSinglepart_management(out_clipped, out_clipsingle) # could eliminate Multi to Single using
+    clipsingles = FCtoDF(out_clipsingle, dffields = ['SHAPE@LENGTH', tID_fld], length=True)
+    widthpart = clipsingles.groupby(tID_fld)['SHAPE@LENGTH'].first()
+    widthpart.name = 'WidthPart'
+    # WidthFull
+    print('Getting the width along each transect of the entire barrier (WidthFull)...')
+    verts = FCtoDF(out_clipped, id_fld=tID_fld, explode_to_points=True) #FIXME: throws RuntimeError at line 17 arr = arcpy.da.FeatureClassToNumPyArray(os.path.join(arcpy.env.workspace, fc), fcfields, null_value=fill, explode_to_points=explode_to_points) #FIXME: throws error
+    d = verts.groupby(tID_fld)['SHAPE@X', 'SHAPE@Y'].agg(lambda x: x.max() - x.min())
+    widthfull = np.hypot(d['SHAPE@X'], d['SHAPE@Y'])
+    widthfull.name = 'WidthFull'
+    # WidthLand
+    print('Getting the width along each transect of above water portion of the barrier (WidthLand)...')
+    clipped = FCtoDF(out_clipped, dffields = ['SHAPE@LENGTH', tID_fld], length=True, verbose=False)
+    widthland = clipped.groupby(tID_fld)['SHAPE@LENGTH'].first()
+    widthland.name = 'WidthLand'
+    # Combine into DF
+    widths_df = pd.DataFrame({'WidthFull':widthfull, 'WidthLand':widthland, 'WidthPart':widthpart}, index=widthfull.index)
+    return(widths_df)
+
+"""
+Format conversion
+"""
 def TransectsToContinuousRaster(in_trans, out_rst, cell_size, IDfield='sort_ID'):
     # Create raster of sort_ID - each cell value indicates its nearest transect
     # in_trans = extTrans_tidy (only sort_ID field is necessary)
@@ -854,7 +1106,7 @@ def FCtoRaster(in_fc, in_ID, out_rst, IDfield, home, fill=False, cell_size=5):
     print('Raster {} created from {}.'.format(out_rst, in_fc))
     return fill_fc, out_rst
 
-def TransectsToPointsDF(in_trans, barrierBoundary, out_tidyclipped='tidytrans_clipped', fc_out=False, tID_fld='sort_ID', step=5):
+def TransectsToPointsDF(in_trans, barrierBoundary, fc_out='', tID_fld='sort_ID', step=5):
     start = time.clock()
     out_tidyclipped='tidytrans_clipped2island'
     if not arcpy.Exists(out_tidyclipped):
@@ -862,263 +1114,23 @@ def TransectsToPointsDF(in_trans, barrierBoundary, out_tidyclipped='tidytrans_cl
     print('Getting points every 5m along each transect and saving in dataframe...')
     # Initialize empty dataframe
     df = pd.DataFrame(columns=[tID_fld, 'seg_x', 'seg_y'])
-    # Get shape object and sort_ID value for each transects
+    # Get shape object and tID value for each transects
     with arcpy.da.SearchCursor(out_tidyclipped, ("SHAPE@", tID_fld)) as cursor:
         for row in cursor:
             ID = row[1]
             line = row[0]
+            # Get points in 5m increments along transect and save to df
             for i in range(0, int(line.length), step):
                 pt = line.positionAlongLine(i)[0]
-                newrow = {tID_fld:ID, 'seg_x':pt.X, 'seg_y':pt.Y}
-                # add to DF
-                df = df.append(newrow, ignore_index=True)
-    if fc_out:
+                df = df.append({tID_fld:ID, 'seg_x':pt.X, 'seg_y':pt.Y}, ignore_index=True)
+    if len(fc_out) > 1:
         print('Converting new dataframe to feature class...')
-        fc = '{}_{}mPts_unsorted'.format(in_trans, step)
-        DFtoFC(df, fc, id_fld=tID_fld, spatial_ref = arcpy.Describe(in_trans).spatialReference)
+        # fc = '{}_{}mPts_unsorted'.format(in_trans, step)
+        DFtoFC(df, fc_out, id_fld=tID_fld, spatial_ref = arcpy.Describe(in_trans).spatialReference)
         duration = print_duration(start)
-        return(df, fc)
+        return(df, fc_out)
     duration = print_duration(start)
-    return(df)
-
-def ShorelineToTrans_PD(extendedTransects, trans_df, inPtsDict, IDfield, proj_code, disttolerance=25, fill=-99999):
-    # shl2trans = 'SHL2trans'
-    # shlfields = ['SL_Lon','SL_Lat','SL_x','SL_y','Bslope']
-    shoreline = inPtsDict['shoreline']
-    ShorelinePts = inPtsDict['ShorelinePts']
-    shl2trans = 'SHL2trans_temp'
-    shljoin = 'shljoin_temp'
-    home = arcpy.env.workspace
-    arcpy.Intersect_analysis((shoreline, extendedTransects), shl2trans, output_type='POINT')
-    #FIXME: shljoin = JOIN closest feature in ShorelinePts to shl2trans
-    #fmap = 'sort_ID "sort_ID" true true false 2 Short 0 0 ,First,#,SHL2trans_temp,sort_ID,-1,-1; ID "ID" true true false 4 Float 0 0 ,First,#,\\IGSAGIEGGS-CSGG\Thieler_Group\Commons_DeepDive\DeepDive\Delmarva\Assateague\2014\Assateague2014.gdb\Assateague2014_SLpts,ID,-1,-1'
-    # arcpy.SpatialJoin_analysis(shl2trans, os.path.join(home, ShorelinePts), 'join_temp','#','#', fmap, "CLOSEST", pt2trans_disttolerance) # create join_temp
-
-def ShoreIntersectToTrans_PD(trans_df, shljoin, IDfield, disttolerance=25, fill=-99999):
-    shljoin_df = FCtoDF(shljoin, xy=True, dffields=[IDfield, 'slope', 'Distance'], fid=True)
-    shljoin_df.rename(index=str, columns={'slope':'Bslope', 'SHAPE@X':'SL_x','SHAPE@Y':'SL_y', 'OID@':'slpts_id'}, inplace=True)
-    for i, row in shljoin_df.iterrows():
-        if row['Distance'] > disttolerance:
-            shljoin_df.ix[i, 'Bslope'] = fill
-    shljoin_df = shljoin_df.drop('Distance', axis=1)
-    shljoin_df.index.name = IDfield
-    trans_df = join_columns(trans_df, shljoin_df, id_fld=IDfield)
-    # JoinDFtoFC(shljoin_df, extendedTransects, IDfield)
-    # return extendedTransects
-    return(trans_df, shljoin_df)
-
-def ArmorLineToTrans_PD(in_trans, trans_df, armorLines, IDfield, proj_code, elevGrid_5m):
-    #FIXME: How do I know which point will be encountered first? - don't want those in back to take the place of
-    arm2trans="arm2trans"
-    armorfields = ['Arm_x','Arm_y','Arm_z']
-    if not arcpy.Exists(armorLines) or not int(arcpy.GetCount_management(armorLines).getOutput(0)):
-        print('Armoring file either missing or empty so we will proceed without armoring data. If shorefront tampering is present at this site, cancel the operations to digitize.')
-        arm2trans_df = pd.DataFrame(columns=armorfields, data=np.nan, index=trans_df.index)
-    else:
-        # arcpy.GetCount_management(armorLines).getOutput(0)
-        # Create armor points with XY fields
-        arcpy.Intersect_analysis((armorLines, in_trans), arm2trans, output_type='POINT')
-        print('Getting elevation of beach armoring by extracting elevation values to arm2trans points.')
-        #FIXME: might need to convert multipart to singlepart before running Extract
-        arcpy.sa.ExtractMultiValuesToPoints(arm2trans, [[elevGrid_5m, 'z_tmp']]) # this produced a Background Processing error: temporary solution is to disable background processing in the Geoprocessing Options
-        arm2trans_df = FCtoDF(arm2trans, xy=True, dffields=[IDfield, 'z_tmp'])
-        arm2trans_df.rename(index=str, columns={'z_tmp':'Arm_z', 'SHAPE@X':'Arm_x','SHAPE@Y':'Arm_y'}, inplace=True)
-        arm2trans_df.index.name = IDfield
-    # Join
-    trans_df = join_columns(trans_df, arm2trans_df)
-    # JoinDFtoFC(arm2trans_df, in_trans, IDfield)
-    # return(in_trans)
-    return(trans_df)
-
-def calc_BeachWidth(in_trans, trans_df, maxDH, tID_fld='sort_ID', MHW=''):
-    # v3 (v1: arcpy, v2: pandas, v3: pandas with snapToLine() from arcpy)
-    # To find dlow proxy, uses code written by Ben in Matlab and converted to pandas by Emily
-    # Adds snapToLine() polyline geometry method from arcpy
-    # add (or recalculate) elevation fields adjusted to MHW
-    trans_df = adjust2mhw(trans_df, MHW)
-    # initialize series
-    sl2dl = pd.Series(np.nan, index=trans_df.index, name='DistDL')
-    sl2dh = pd.Series(np.nan, index=trans_df.index, name='DistDH')
-    sl2arm = pd.Series(np.nan, index=trans_df.index, name='DistArm') # dtype will 'object'
-    uBW = pd.Series(np.nan, index=trans_df.index, name='uBW')
-    uBH = pd.Series(np.nan, index=trans_df.index, name='uBH')
-    feat = pd.Series(np.nan, index=trans_df.index, name='ub_feat') # dtype will 'object'
-    for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
-        transect = row[0]
-        tID = row[1]
-        tran = trans_df.ix[tID]
-        if not np.isnan(tran.DL_x): # RuntimeError: Point: Input value is not numeric
-            ptDL = transect.snapToLine(arcpy.Point(tran['DL_x'], tran['DL_y']))
-            sl2dl[tID] = np.hypot(tran['SL_x']- ptDL[0].X, tran['SL_y'] - ptDL[0].Y)
-        if not np.isnan(tran.DH_x):
-            ptDH = transect.snapToLine(arcpy.Point(tran['DH_x'], tran['DH_y']))
-            sl2dh[tID] = np.hypot(tran['SL_x'] - ptDH[0].X, tran['SL_y'] - ptDH[0].Y)
-        if not np.isnan(tran.Arm_x):
-            ptArm = transect.snapToLine(arcpy.Point(tran['Arm_x'], tran['Arm_y']))
-            sl2arm[tID] = np.hypot(tran['SL_x'] - ptArm[0].X, tran['SL_y'] - ptArm[0].Y)
-        if not np.isnan(tran.DL_x):
-            uBW[tID] = sl2dl[tID]
-            uBH[tID] = tran['DL_zmhw']
-            feat[tID] = 'DL'
-        elif tran.DH_zmhw <= maxDH:
-            uBW[tID] = sl2dh[tID]
-            uBH[tID] = tran['DH_zmhw']
-            feat[tID] = 'DH'
-        elif not np.isnan(tran.Arm_x):
-            uBW[tID] = sl2arm[tID]
-            uBH[tID] = tran['Arm_zmhw']
-            feat[tID] = 'Arm'
-        else: # If there is no DL equivalent, BW and BH = null
-            # uBW[tID] = uBH[tID] = np.nan
-            continue
-    # Add new uBW and uBH fields to trans_df
-    bw_df = pd.concat([sl2dl, sl2dh, sl2arm, uBW, uBH, feat], axis=1)
-    # pts_df = (pts_df.drop(pts_df.axes[1].intersection(bw_df.axes[1]), axis=1).join(bw_df, on=tID_fld, how='outer'))
-    trans_df = join_columns(trans_df, bw_df)
-    return(trans_df)
-
-def calc_BeachWidth_fill(in_trans, trans_df, maxDH, tID_fld='sort_ID', MHW='', fill=-99999):
-    # v3 (v1: arcpy, v2: pandas, v3: pandas with snapToLine() from arcpy)
-    # To find dlow proxy, uses code written by Ben in Matlab and converted to pandas by Emily
-    # Adds snapToLine() polyline geometry method from arcpy
-
-    # replace nan's with fill for cursor operations; may actually be necessary to work with nans... performing calculations with fill results in inaccuracies
-    if trans_df.isnull().values.any():
-        nan_input = True
-        trans_df.fillna(fill, inplace=True)
-    else:
-        nan_input = False
-    # add (or recalculate) elevation fields adjusted to MHW
-    trans_df = adjust2mhw(trans_df, MHW, ['DH_z', 'DL_z', 'Arm_z'], fill)
-    # initialize df
-    bw_df = pd.DataFrame(fill, index=trans_df.index, columns= ['DistDL', 'DistDH', 'DistArm', 'uBW', 'uBH', 'ub_feat'], dtype='f8')
-    # initialize series
-    # feat = pd.Series(fill, index=trans_df.index, dtype='object', name='ub_feat') # dtype will 'object'
-    for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
-        transect = row[0]
-        tID = row[1]
-        tran = trans_df.ix[tID]
-        if int(tran.DL_x) != int(fill):
-            ptDL = transect.snapToLine(arcpy.Point(tran['DL_x'], tran['DL_y']))
-            bw_df['DistDL'].iloc[tID] = np.hypot(tran['SL_x']- ptDL[0].X, tran['SL_y'] - ptDL[0].Y)
-        if int(tran.DH_x) != int(fill):
-            ptDH = transect.snapToLine(arcpy.Point(tran['DH_x'], tran['DH_y']))
-            bw_df['DistDH'].iloc[tID] = np.hypot(tran['SL_x'] - ptDH[0].X, tran['SL_y'] - ptDH[0].Y)
-        if int(tran.Arm_x) != int(fill):
-            ptArm = transect.snapToLine(arcpy.Point(tran['Arm_x'], tran['Arm_y']))
-            bw_df['DistArm'].iloc[tID] = np.hypot(tran['SL_x'] - ptArm[0].X, tran['SL_y'] - ptArm[0].Y)
-        if int(tran.DL_x) != int(fill):
-            bw_df['uBW'].iloc[tID] = bw_df['DistDL'].iloc[tID]
-            bw_df['uBH'].iloc[tID] = tran['DL_zmhw']
-            bw_df['ub_feat'].iloc[tID] = 'DL'
-        elif int(tran.DH_x) != int(fill) and tran.DH_zmhw <= maxDH:
-            bw_df['uBW'].iloc[tID] = bw_df['DistDH'].iloc[tID]
-            bw_df['uBH'].iloc[tID] = tran['DH_zmhw']
-            bw_df['ub_feat'].iloc[tID] = 'DH'
-        elif int(tran.Arm_x) != int(fill):
-            bw_df['uBW'].iloc[tID] = bw_df['DistArm'].iloc[tID]
-            bw_df['uBH'].iloc[tID] = tran['Arm_zmhw']
-            bw_df['ub_feat'].iloc[tID] = 'Arm'
-        else:
-            continue
-    # Add new uBW and uBH fields to trans_df
-    trans_df = join_columns(trans_df, bw_df)
-    if nan_input: # restore nan values
-        trans_df.replace(fill, np.nan, inplace=True)
-    return(trans_df)
-
-def calc_BeachWidth_fill_v1(in_trans, trans_df, maxDH, tID_fld='sort_ID', MHW='', fill=-99999):
-    # v3 (v1: arcpy, v2: pandas, v3: pandas with snapToLine() from arcpy)
-    # To find dlow proxy, uses code written by Ben in Matlab and converted to pandas by Emily
-    # Adds snapToLine() polyline geometry method from arcpy
-
-    # replace nan's with fill for cursor operations; may actually be necessary to work with nans... performing calculations with fill results in inaccuracies
-    if trans_df.isnull().values.any():
-        nan_input = True
-        trans_df.fillna(fill, inplace=True)
-    else:
-        nan_input = False
-    # add (or recalculate) elevation fields adjusted to MHW
-    trans_df = adjust2mhw(trans_df, MHW, ['DH_z', 'DL_z', 'Arm_z'], fill)
-    # initialize df
-    bw_df = pd.DataFrame(fill, index=trans_df.index, columns= ['DistDL', 'DistDH', 'DistArm', 'uBW', 'uBH', 'ub_feat'], dtype='f8')
-    # initialize series
-    sl2dl = pd.Series(fill, index=trans_df.index, dtype='f8', name='DistDL')
-    sl2dh = pd.Series(fill, index=trans_df.index, dtype='f8', name='DistDH')
-    sl2arm = pd.Series(fill, index=trans_df.index, dtype='f8', name='DistArm') # dtype will 'object'
-    uBW = pd.Series(fill, index=trans_df.index, dtype='f8', name='uBW')
-    uBH = pd.Series(fill, index=trans_df.index, dtype='f8', name='uBH')
-    feat = pd.Series(fill, index=trans_df.index, dtype='object', name='ub_feat') # dtype will 'object'
-    for row in arcpy.da.SearchCursor(in_trans, ("SHAPE@",  tID_fld)):
-        transect = row[0]
-        tID = row[1]
-        tran = trans_df.ix[tID]
-        # if not np.isnan(tran.DL_x): # RuntimeError: Point: Input value is not numeric
-        if int(tran.DL_x) != int(fill):
-            ptDL = transect.snapToLine(arcpy.Point(tran['DL_x'], tran['DL_y']))
-            sl2dl[tID] = np.hypot(tran['SL_x']- ptDL[0].X, tran['SL_y'] - ptDL[0].Y)
-        # if not np.isnan(tran.DH_x):
-        if int(tran.DH_x) != int(fill):
-            ptDH = transect.snapToLine(arcpy.Point(tran['DH_x'], tran['DH_y']))
-            sl2dh[tID] = np.hypot(tran['SL_x'] - ptDH[0].X, tran['SL_y'] - ptDH[0].Y)
-        # if not np.isnan(tran.Arm_x):
-        if int(tran.Arm_x) != int(fill):
-            ptArm = transect.snapToLine(arcpy.Point(tran['Arm_x'], tran['Arm_y']))
-            sl2arm[tID] = np.hypot(tran['SL_x'] - ptArm[0].X, tran['SL_y'] - ptArm[0].Y)
-        # if not np.isnan(tran.DL_x):
-        if int(tran.DL_x) != int(fill):
-            uBW[tID] = sl2dl[tID]
-            uBH[tID] = tran['DL_zmhw']
-            feat[tID] = 'DL'
-        # elif tran.DH_zmhw <= maxDH:
-        elif int(tran.DH_x) != int(fill) and tran.DH_zmhw <= maxDH:
-            uBW[tID] = sl2dh[tID]
-            uBH[tID] = tran['DH_zmhw']
-            feat[tID] = 'DH'
-        # elif not np.isnan(tran.Arm_x):
-        elif int(tran.Arm_x) != int(fill):
-            uBW[tID] = sl2arm[tID]
-            uBH[tID] = tran['Arm_zmhw']
-            feat[tID] = 'Arm'
-        else: # If there is no DL equivalent, BW and BH = null
-            # uBW[tID] = uBH[tID] = np.nan
-            continue
-    # Add new uBW and uBH fields to trans_df
-    bw_df = pd.concat([sl2dl, sl2dh, sl2arm, uBW, uBH, feat], axis=1)
-    # pts_df = (pts_df.drop(pts_df.axes[1].intersection(bw_df.axes[1]), axis=1).join(bw_df, on=tID_fld, how='outer'))
-    trans_df = join_columns(trans_df, bw_df)
-    if nan_input: # restore nan values
-        trans_df.replace(fill, np.nan, inplace=True)
-    return(trans_df)
-
-def calc_IslandWidths(in_trans, barrierBoundary, out_clipped='clip2island', tID_fld='sort_ID'):
-    home = arcpy.env.workspace
-    if not arcpy.Exists(out_clipped):
-        print('Clipping the transect to the barrier island boundaries...')
-        arcpy.Clip_analysis(os.path.join(home, in_trans), os.path.join(home, barrierBoundary), out_clipped) # ~30 seconds
-    # WidthPart - spot-checking verifies the results, but it should additionally include a check to ensure that the first transect part encountered intersects the shoreline
-    print('Getting the width along each transect of the oceanside land (WidthPart)...')
-    # could eliminate Multi to Single using
-    out_clipsingle = out_clipped + 'Single_temp'
-    if not arcpy.Exists(out_clipsingle):
-        arcpy.MultipartToSinglepart_management(out_clipped, out_clipsingle)
-    clipsingles = FCtoDF(out_clipsingle, dffields = ['SHAPE@LENGTH', tID_fld], length=True)
-    widthpart = clipsingles.groupby(tID_fld)['SHAPE@LENGTH'].first()
-    widthpart.name = 'WidthPart'
-    # WidthFull
-    print('Getting the width along each transect of the entire barrier (WidthFull)...')
-    verts = FCtoDF(out_clipped, id_fld=tID_fld, explode_to_points=True) #FIXME: throws RuntimeError at line 17 arr = arcpy.da.FeatureClassToNumPyArray(os.path.join(arcpy.env.workspace, fc), fcfields, null_value=fill, explode_to_points=explode_to_points) #FIXME: throws error
-    d = verts.groupby(tID_fld)['SHAPE@X', 'SHAPE@Y'].agg(lambda x: x.max() - x.min())
-    widthfull = np.hypot(d['SHAPE@X'], d['SHAPE@Y'])
-    widthfull.name = 'WidthFull'
-    # WidthLand
-    print('Getting the width along each transect of above water portion of the barrier (WidthLand)...')
-    clipped = FCtoDF(out_clipped, dffields = ['SHAPE@LENGTH', tID_fld], length=True, verbose=False)
-    widthland = clipped.groupby(tID_fld)['SHAPE@LENGTH'].first()
-    widthland.name = 'WidthLand'
-    # Combine into DF
-    widths_df = pd.DataFrame({'WidthFull':widthfull, 'WidthLand':widthland, 'WidthPart':widthpart}, index=widthfull.index)
-    return(widths_df)
+    return(df, fc_out)
 
 def FCtoDF(fc, xy=False, dffields=[], fill=-99999, id_fld=False, extra_fields=[], verbose=True, fid=False, explode_to_points=False, length=False):
     # Convert FeatureClass to pandas.DataFrame with np.nan values
@@ -1179,7 +1191,7 @@ def JoinDFtoFC(df, in_fc, join_id, target_id=False, out_fc='', overwrite=True, f
         arcpy.FeatureClassToFeatureClass_conversion(in_fc, arcpy.env.workspace, out_fc)
     # Use arcpy.da.ExtendTable() to join DF
     if df.index.name in df.columns:
-        df.drop(df.index.name, axis=1, inplace=True)
+        df.index.name = 'index'
     arr = df.select_dtypes(exclude=['object']).fillna(fill).to_records()
     if overwrite:
         arcpy.da.ExtendTable(out_fc, target_id, arr, join_id, append_only=False)
@@ -1195,7 +1207,7 @@ def JoinDFtoFC_v1(df, in_fc, join_id, target_id=False, out_fc='', join_fields=[]
     # Convert DF to Table
     if verbose:
         print('Converting the dataframe to a geodatabase table...')
-    tbl = os.path.join(arcpy.env.workspace, os.path.basename(in_fc) + 'join_temp')
+    tbl = os.path.join(arcpy.env.scratchGDB, os.path.basename(in_fc) + 'join_temp')
     DFtoTable(df, tbl, fill)
     # Copy the input FC to initialize the FC to be joined
     if not len(out_fc): # if out_fc is blank,
@@ -1231,32 +1243,52 @@ def JoinDFtoFC_v1(df, in_fc, join_id, target_id=False, out_fc='', join_fields=[]
     return(out_fc)
 
 def DFtoFC(df, fc, spatial_ref, id_fld='', xy=["seg_x", "seg_y"], keep_fields=[], fill=-99999):
-    # Create FC from DF; default will only copy XY and ID fields
+    # Create FC from DF; default only copies X,Y,ID fields
     # using too many fields with a large dataset will fail
+    # Make sure name of index is not also a column name
+    if df.index.name in df.columns:
+        df.index.name = 'index'
     # Convert DF to array
     if keep_fields == 'all':
         keep_fields = df.columns
     else:
         keep_fields += xy + [id_fld]
-    arr = (df.select_dtypes(exclude=['object'])
+    # First, remove 'object' type columns, all columns not in keep_fields, convert to floats, and fill Nulls.
+    # And remove any rows with X or Y == None
+    xfld = xy[0]
+    df = df[~df[xfld].isnull()]
+    df = df[df[xfld]!=fill]
+    try:
+        arr = (df.select_dtypes(exclude=['object'])
+                 .drop(df.columns.drop(keep_fields, errors='ignore'), errors='ignore', axis=1)
+                 .astype('f8').fillna(fill).to_records())
+    except ValueError:
+        df.index.name = 'index'
+        arr = (df.select_dtypes(exclude=['object'])
              .drop(df.columns.drop(keep_fields, errors='ignore'), errors='ignore', axis=1)
-             .astype('f8')
-             .fillna(fill)
-             .to_records())
+             .astype('f8').fillna(fill).to_records())
+        print('Encountered ValueError while converting dataframe to array so set index name to "index" before running.' )
     # Convert array to FC
-    fc = os.path.join(arcpy.env.workspace, os.path.basename(fc)) # set fc path
+    fc = os.path.join(arcpy.env.scratchGDB, os.path.basename(fc)) # set fc path
     arcpy.Delete_management(fc) # delete if already exists
     arcpy.da.NumPyArrayToFeatureClass(arr, fc, xy, spatial_ref)
     return(fc)
 
 def DFtoFC_large(pts_df, outFC_pts, spatial_ref, df_id='SplitSort', xy=["seg_x", "seg_y"], fill=-99999, verbose=True):
     # Create FC from DF using only XY and ID; then join the DF to the new FC
-    # 1. Create pts FC
+    # 1. Create pts FC with only XY
+    start = time.clock()
     if verbose:
         print('Converting points DF to FC...')
     outFC_pts = DFtoFC(df=pts_df, fc=outFC_pts, spatial_ref=spatial_ref, id_fld=df_id, xy=xy, keep_fields=[], fill=fill)
+    # 2. join the DF to the new FC
+    # convert DF to array, replacing Null with fill and excluding object column types
     arr = pts_df.select_dtypes(exclude=['object']).fillna(fill).to_records()
+    # join array to the XY FC; matching fields in the input will overwrite those in outFC_pts
     arcpy.da.ExtendTable(outFC_pts, df_id, arr, df_id, append_only=False) # Takes a long time
+    if verbose:
+        print("OUTPUT: {}".format(outFC_pts))
+    print_duration(start)
     return(outFC_pts)
 
 def DFtoFC_2parts(pts_df, outFC_pts, trans_df, trans_fc, spatial_ref, df_id='SplitSort', group_id='sort_ID', xy=["seg_x", "seg_y"], pt_flds=[], group_flds=[], fill=-99999, verbose=True):
@@ -1275,11 +1307,11 @@ def DFtoFC_2parts(pts_df, outFC_pts, trans_df, trans_fc, spatial_ref, df_id='Spl
     arcpy.JoinField_management(outFC_pts, group_id, group_fc, group_id, missing_fields)
     return(outFC_pts, group_fc)
 
-def JoinDFtoRaster(df, rst_ID, out_rst, fill=-99999, id_fld='sort_ID'):
+def JoinDFtoRaster_old(df, rst_ID, out_rst, fill=-99999, id_fld='sort_ID'):
     # Join fields from df to rst_ID to create new out_rst
     # replace null with fill
     # df.select_dtypes(exclude='object')
-    trans_tbl = os.path.join(arcpy.env.workspace, os.path.basename(out_rst) + '_temp')
+    trans_tbl = os.path.join(arcpy.env.scratchGDB, os.path.basename(out_rst) + '_temp')
     DFtoTable(df, trans_tbl)
     arcpy.MakeTableView_management(trans_tbl, 'tableview')
     RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
@@ -1289,41 +1321,56 @@ def JoinDFtoRaster(df, rst_ID, out_rst, fill=-99999, id_fld='sort_ID'):
     return(out_rst)
 
 def DFtoTable(df, tbl, fill=-99999):
+    # Convert data frame to Arc Table by converting to np.array with fill values and then to Table
     try:
         arr = df.select_dtypes(exclude=['object']).fillna(fill).to_records()
     except ValueError:
         df.index.name = 'index'
         arr = df.select_dtypes(exclude=['object']).fillna(fill).to_records()
+    if not os.path.split(tbl)[0]: # if no path is provided, default to scratch gdb
+        tbl = os.path.join(arcpy.env.scratchGDB, tbl)
     arcpy.Delete_management(tbl)
     arcpy.da.NumPyArrayToTable(arr, tbl)
     return(tbl)
 
-def JoinDFtoRaster_setvalue(df, rst_ID, out_rst, fill=-99999, id_fld='sort_ID', val_fld=''):
+def JoinDFtoRaster_setvalue(df, rst_ID, out_rst_pre='', fill=-99999, id_fld='sort_ID', val_fld=''):
     # Join fields from df to rst_ID to create new out_rst
-    # replace null with fill
-    # df.select_dtypes(exclude='object')
+    if len(out_rst_pre) < 1:
+        out_rst_pre = 'trans2rst'
     # Convert DF to Table
-    trans_tbl = os.path.join(arcpy.env.workspace, os.path.basename(out_rst) + '_temp')
-    DFtoTable(df, trans_tbl)
-    # trans_arr = df.select_dtypes(exclude=['object']).fillna(fill).to_records()
-    # arcpy.Delete_management(trans_tbl)
-    # arcpy.da.NumPyArrayToTable(trans_arr, trans_tbl)
+    trans_tbl = os.path.basename(out_rst_pre)+'_tbl'
+    tbl_path = DFtoTable(df, trans_tbl)
     # Make raster
     RemoveLayerFromMXD('rst_lyr') # in case of reprocessing
     arcpy.MakeRasterLayer_management(rst_ID, 'rst_lyr')
     # Join data to raster and save as out_rst
-    arcpy.MakeTableView_management(trans_tbl, 'tableview')
+    arcpy.MakeTableView_management(tbl_path, 'tableview')
     arcpy.AddJoin_management('rst_lyr', 'Value', 'tableview', id_fld)
     # Try Lookup (FIXME: might require certain type of values, e.g. 'f8')
     if len(val_fld):
         try:
             # val_fld = os.path.basename(trans_tbl) + val_fld
-            outRas = arcpy.sa.Lookup(out_rst, val_fld)
-            outRas.save(out_rst+val_fld)
-            print('New raster is saved as {}. Field "VALUE" is {}.'.format(out_rst+val_fld, val_fld))
+            out_rst = out_rst_pre+'_'+val_fld
+            outRas = arcpy.sa.Lookup(out_rst_pre, val_fld)
+            outRas.save(out_rst)
+            print('New raster is saved as {}. Field "VALUE" is {}.'.format(out_rst, val_fld))
         except:
             val_fld = ''
     if not len(val_fld):
+        out_rst = out_rst_pre+'_attrs'
         arcpy.CopyRaster_management('rst_lyr', out_rst)
-        print('New raster is saved as {}. Field "VALUE" is ID and "UBW" is beachwidth.'.format(out_rst))
+        print('New raster is saved as {}. Field "VALUE" is ID and "uBW" is beachwidth.'.format(out_rst))
+    return(out_rst)
+
+def JoinDFtoRaster(df, rst_ID, out_rst='', fill=-99999, id_fld='sort_ID', val_fld=''):
+    # Join fields from df to rst_ID to create new out_rst
+    if len(out_rst) < 1:
+        out_rst = 'trans2rst_'+val_fld
+    # Convert DF to Table
+    trans_tbl = os.path.basename(out_rst)+'_tbl'
+    tbl_path = DFtoTable(df, trans_tbl)
+    # Join field to raster and save as out_rst
+    arcpy.CopyRaster_management(rst_ID, out_rst)
+    arcpy.management.JoinField(out_rst, "Value", tbl_path, id_fld, val_fld)
+    print('OUTPUT: {}. Field "Value" is ID and "uBW" is beachwidth.'.format(out_rst))
     return(out_rst)
